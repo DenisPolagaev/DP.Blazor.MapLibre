@@ -29,7 +29,7 @@ public sealed class GeoGridPlugin : IMapLibrePlugin
 
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "/_content/GeoGridPlugin/GeoGridPlugin.js");
+            "import", "./_content/GeoGridPlugin/GeoGridPlugin.js");
     }
 
     /// <summary>

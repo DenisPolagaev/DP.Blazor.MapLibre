@@ -17,7 +17,7 @@ public sealed partial class TerraDrawPlugin : IMapLibrePlugin
     {
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "/_content/TerraDrawPlugin/TerraDrawPlugin.js");
+            "import", "./_content/TerraDrawPlugin/TerraDrawPlugin.js");
         await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
     }
 
