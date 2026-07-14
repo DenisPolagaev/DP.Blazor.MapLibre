@@ -1216,6 +1216,21 @@ export function getCanvas(container) {
 }
 
 /**
+ * Sets the CSS cursor style on the map canvas.
+ *
+ * @param {string} container - The identifier for the map container instance.
+ * @param {string} cursor - The CSS cursor value (empty string restores the default).
+ */
+export function setCanvasCursor(container, cursor) {
+    const map = mapInstances[container];
+    if (!map) {
+        return;
+    }
+
+    map.getCanvas().style.cursor = cursor || '';
+}
+
+/**
  * Retrieves the canvas container associated with the given container.
  *
  * @param {string} container - The identifier for the container whose canvas container is to be retrieved.

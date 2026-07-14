@@ -1174,6 +1174,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeAsync<IJSObjectReference>("getCanvas", JsContainerId);
 
     /// <summary>
+    /// Sets the CSS cursor style on the map canvas.
+    /// </summary>
+    /// <param name="cursor">The CSS cursor value. Pass null or empty to restore the default.</param>
+    public async ValueTask SetCanvasCursor(string? cursor) =>
+        await _jsModule.InvokeVoidAsync("setCanvasCursor", JsContainerId, cursor ?? string.Empty);
+
+    /// <summary>
     /// Gets the container of the map's canvas element.
     /// </summary>
     /// <returns>A JSObjectReference representing the canvas container.</returns>
