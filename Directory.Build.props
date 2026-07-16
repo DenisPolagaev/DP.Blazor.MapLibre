@@ -1,0 +1,6 @@
+<Project>
+  <!-- Isolate submodule from repo-wide Directory.Build.props (TFM, TreatWarningsAsErrors, CPM). -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

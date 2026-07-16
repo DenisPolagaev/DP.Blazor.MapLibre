@@ -1,0 +1,6 @@
+<Project>
+  <!-- Keep submodule package versions local; do not inherit parent CPM. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

@@ -1003,11 +1003,13 @@ async function resolveSourceBounds(map, sourceId) {
 
 async function resolveLoadedLayerFeatureBounds(map, layer) {
     let bounds = querySourceFeatureBounds(map, layer);
-    if (bounds || map.loaded?.()) {
+    if (bounds) {
         return bounds;
     }
 
-    await waitForIdle(map);
+    // Map may already be "loaded" (basemap ready) while a newly added vector
+    // source still has no tiles in cache — always wait once for idle/source data.
+    await waitForSourceFeatures(map, layer.source);
     return querySourceFeatureBounds(map, layer);
 }
 
@@ -1109,6 +1111,36 @@ function waitForIdle(map) {
         const timeoutId = setTimeout(finish, 1000);
 
         map.once('idle', finish);
+    });
+}
+
+function waitForSourceFeatures(map, sourceId) {
+    return new Promise(resolve => {
+        let resolved = false;
+        const finish = () => {
+            if (resolved) {
+                return;
+            }
+
+            resolved = true;
+            clearTimeout(timeoutId);
+            map.off('idle', finish);
+            map.off('sourcedata', onSourceData);
+            resolve();
+        };
+        const onSourceData = event => {
+            if (event?.sourceId === sourceId && event.isSourceLoaded) {
+                finish();
+            }
+        };
+        const timeoutId = setTimeout(finish, 2000);
+
+        map.on('sourcedata', onSourceData);
+        map.once('idle', finish);
+
+        if (typeof map.isSourceLoaded === 'function' && map.isSourceLoaded(sourceId)) {
+            finish();
+        }
     });
 }
 
