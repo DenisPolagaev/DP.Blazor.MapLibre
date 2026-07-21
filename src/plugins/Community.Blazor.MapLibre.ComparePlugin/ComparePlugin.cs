@@ -94,6 +94,12 @@ public sealed class ComparePlugin : IAsyncDisposable
         return await _pluginJsModule.InvokeAsync<double>("getCurrentPosition");
     }
 
+    public async ValueTask<CompareSliderState> GetSliderStateAsync()
+    {
+        EnsureInitialized();
+        return await _pluginJsModule.InvokeAsync<CompareSliderState>("getSliderState");
+    }
+
     public async Task SetSliderAsync(double position)
     {
         EnsureInitialized();

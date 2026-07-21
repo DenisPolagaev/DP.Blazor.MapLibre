@@ -283,6 +283,29 @@ export function getCurrentPosition() {
     return compareControl?.currentPosition ?? 0;
 }
 
+/**
+ * @returns {{ position: number, width: number, height: number, ratio: number }}
+ */
+export function getSliderState() {
+    if (!compareControl) {
+        return { position: 0, width: 0, height: 0, ratio: 0.5 };
+    }
+
+    const width = compareControl._bounds?.width
+        || compareContainerElement?.clientWidth
+        || 0;
+    const height = compareControl._bounds?.height
+        || compareContainerElement?.clientHeight
+        || 0;
+    const position = compareControl.currentPosition ?? 0;
+    return {
+        position,
+        width,
+        height,
+        ratio: width > 0 ? position / width : 0.5,
+    };
+}
+
 export function setSlider(position) {
     compareControl?.setSlider(position);
 }

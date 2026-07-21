@@ -1516,7 +1516,7 @@ export function getImage(container, id) {
  * @returns {Object|undefined} The layer object if found, or undefined if the layer does not exist.
  */
 export function getLayer(container, id) {
-    return mapInstances[container].getLayer(id);
+    return mapInstances[container]?.getLayer(id);
 }
 
 /**
@@ -1526,7 +1526,7 @@ export function getLayer(container, id) {
  * @returns {boolean} True if the layer exists.
  */
 export function hasLayer(container, id) {
-    return mapInstances[container].getLayer(id) != null;
+    return mapInstances[container]?.getLayer(id) != null;
 }
 
 /**
@@ -1547,7 +1547,7 @@ export function getLayersOrder(container) {
  */
 export function whichLayersExist(container, ids) {
     const map = mapInstances[container];
-    if (!Array.isArray(ids) || ids.length === 0) {
+    if (!map || !Array.isArray(ids) || ids.length === 0) {
         return [];
     }
 
@@ -1562,7 +1562,7 @@ export function whichLayersExist(container, ids) {
  */
 export function whichSourcesExist(container, ids) {
     const map = mapInstances[container];
-    if (!Array.isArray(ids) || ids.length === 0) {
+    if (!map || !Array.isArray(ids) || ids.length === 0) {
         return [];
     }
 
@@ -2159,7 +2159,7 @@ export function removeLayer(container, id) {
  */
 export function removeLayerIfExists(container, id) {
     const map = mapInstances[container];
-    if (!map.getLayer(id)) {
+    if (!map?.getLayer(id)) {
         return false;
     }
 
@@ -2351,7 +2351,7 @@ export function setGlobalStateProperty(container, propertyName, value) {
  */
 export function setFilter(container, layerId, filter, options) {
     const map = mapInstances[container];
-    if (!map.getLayer(layerId)) return;
+    if (!map?.getLayer(layerId)) return;
     map.setFilter(layerId, filter, options);
 }
 
