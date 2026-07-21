@@ -1148,25 +1148,6 @@ function fitResolvedBounds(map, bounds, options) {
     return true;
 }
 
-function waitForIdle(map) {
-    return new Promise(resolve => {
-        let resolved = false;
-        const finish = () => {
-            if (resolved) {
-                return;
-            }
-
-            resolved = true;
-            clearTimeout(timeoutId);
-            map.off('idle', finish);
-            resolve();
-        };
-        const timeoutId = setTimeout(finish, 1000);
-
-        map.once('idle', finish);
-    });
-}
-
 function waitForSourceFeatures(map, sourceId) {
     return new Promise(resolve => {
         let resolved = false;
