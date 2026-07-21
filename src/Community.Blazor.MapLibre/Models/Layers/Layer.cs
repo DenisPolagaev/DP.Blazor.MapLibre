@@ -82,5 +82,6 @@ public abstract class Layer<TLayout, TPaint> : Layer
     /// </summary>
     [JsonPropertyName("paint")]
     [StringSyntax(StringSyntaxAttribute.Json)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TPaint? Paint { get; set; }
 }
