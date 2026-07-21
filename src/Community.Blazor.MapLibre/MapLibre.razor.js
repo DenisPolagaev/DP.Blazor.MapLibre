@@ -762,12 +762,12 @@ export function setSourceDataAsJson(container, id, data) {
 }
 
 /**
- * Updates tile URLs for an existing vector tile source.
+ * Updates tile URLs for an existing raster or vector tile source without removing dependent layers.
  * @param {string} container - The map container.
  * @param {string} id - The source id.
  * @param {string[]} tiles - The new tile URL templates.
  */
-export function setVectorSourceTiles(container, id, tiles) {
+export function setSourceTiles(container, id, tiles) {
     const source = mapInstances[container].getSource(id);
     if (source === undefined) {
         throw new Error(`Could not find source with id ${id}`);
@@ -778,6 +778,59 @@ export function setVectorSourceTiles(container, id, tiles) {
     }
 
     source.setTiles(tiles);
+}
+
+/**
+ * Adds a tile source when missing; otherwise updates tiles in place via setTiles.
+ * @param {string} container
+ * @param {string} id
+ * @param {object} source - Source specification that includes tiles (and type for add).
+ * @returns {"added"|"updated"}
+ */
+export function upsertTileSource(container, id, source) {
+    const map = mapInstances[container];
+    const existing = map.getSource(id);
+    if (!existing) {
+        addSource(container, id, source);
+        return "added";
+    }
+
+    if (typeof existing.setTiles !== "function") {
+        throw new Error(`Source "${id}" exists but does not support setTiles.`);
+    }
+
+    if (!source?.tiles) {
+        throw new Error(`upsertTileSource requires source.tiles for id "${id}".`);
+    }
+
+    existing.setTiles(source.tiles);
+    return "updated";
+}
+
+/**
+ * @deprecated Prefer {@link setSourceTiles}. Kept for transaction/API compatibility.
+ */
+export function setVectorSourceTiles(container, id, tiles) {
+    setSourceTiles(container, id, tiles);
+}
+
+/**
+ * Updates the TileJSON / style URL for an existing source that supports setUrl.
+ * @param {string} container - The map container.
+ * @param {string} id - The source id.
+ * @param {string} url - The new source URL.
+ */
+export function setSourceUrl(container, id, url) {
+    const source = mapInstances[container].getSource(id);
+    if (source === undefined) {
+        throw new Error(`Could not find source with id ${id}`);
+    }
+
+    if (typeof source.setUrl !== "function") {
+        throw new Error(`Source "${id}" does not support setUrl.`);
+    }
+
+    source.setUrl(url);
 }
 
 /**
@@ -1248,6 +1301,123 @@ export function getCanvas(container) {
 }
 
 /**
+ * Waits until the map is idle (or timeout). Safe no-op when already loaded and tiles ready.
+ * @param {string} container
+ * @param {number} [timeoutMs=3000]
+ * @returns {Promise<void>}
+ */
+export function waitForIdle(container, timeoutMs = 3000) {
+    const map = mapInstances[container];
+    if (!map) {
+        return Promise.reject(new Error(`Map instance not found for container "${container}".`));
+    }
+
+    const tilesReady = typeof map.areTilesLoaded !== "function" || map.areTilesLoaded();
+    if (map.loaded() && tilesReady) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+            clearTimeout(timer);
+            map.off("idle", onIdle);
+            resolve();
+        };
+
+        const onIdle = () => finish();
+        const timer = setTimeout(finish, timeoutMs);
+        map.once("idle", onIdle);
+        try {
+            map.triggerRepaint();
+        } catch {
+            // Rely on timeout / existing frame.
+        }
+    });
+}
+
+/**
+ * Captures the map canvas as a data URL after waiting for idle + one render frame.
+ * @param {string} container
+ * @param {{ idleTimeoutMs?: number, renderTimeoutMs?: number, mimeType?: string }} [options]
+ * @returns {Promise<string>}
+ */
+export async function captureCanvasDataUrl(container, options = {}) {
+    const idleTimeoutMs = options.idleTimeoutMs ?? 3000;
+    const renderTimeoutMs = options.renderTimeoutMs ?? 2500;
+    const mimeType = options.mimeType ?? "image/png";
+    const map = mapInstances[container];
+    if (!map) {
+        throw new Error(`Map instance not found for container "${container}".`);
+    }
+
+    await waitForIdle(container, idleTimeoutMs);
+
+    const copy = await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (result, error) => {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+            clearTimeout(timer);
+            map.off("render", onRender);
+            if (error) {
+                reject(error);
+                return;
+            }
+
+            resolve(result);
+        };
+
+        const onRender = () => {
+            try {
+                const source = map.getCanvas();
+                if (!source || source.width < 1 || source.height < 1) {
+                    finish(null, new Error("Failed to capture map canvas."));
+                    return;
+                }
+
+                const canvas = document.createElement("canvas");
+                canvas.width = source.width;
+                canvas.height = source.height;
+                canvas.style.width = source.style.width;
+                canvas.style.height = source.style.height;
+                const ctx = canvas.getContext("2d", { alpha: false });
+                if (!ctx) {
+                    finish(null, new Error("Failed to create export canvas."));
+                    return;
+                }
+
+                ctx.drawImage(source, 0, 0);
+                finish(canvas);
+            } catch (error) {
+                finish(null, error instanceof Error ? error : new Error(String(error)));
+            }
+        };
+
+        const timer = setTimeout(
+            () => finish(null, new Error("Timed out while capturing map frame.")),
+            renderTimeoutMs);
+
+        map.once("render", onRender);
+        try {
+            map.triggerRepaint();
+        } catch (error) {
+            finish(null, error instanceof Error ? error : new Error(String(error)));
+        }
+    });
+
+    return copy.toDataURL(mimeType);
+}
+
+/**
  * Sets the CSS cursor style on the map canvas.
  *
  * @param {string} container - The identifier for the map container instance.
@@ -1386,6 +1556,84 @@ export function hasLayer(container, id) {
  */
 export function getLayersOrder(container) {
     return mapInstances[container].getLayersOrder();
+}
+
+/**
+ * Returns the subset of layer ids that currently exist in the style.
+ * @param {string} container - The map container.
+ * @param {string[]} ids - Candidate layer ids.
+ * @returns {string[]}
+ */
+export function whichLayersExist(container, ids) {
+    const map = mapInstances[container];
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return [];
+    }
+
+    return ids.filter((id) => !!map.getLayer(id));
+}
+
+/**
+ * Returns the subset of source ids that currently exist in the style.
+ * @param {string} container - The map container.
+ * @param {string[]} ids - Candidate source ids.
+ * @returns {string[]}
+ */
+export function whichSourcesExist(container, ids) {
+    const map = mapInstances[container];
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return [];
+    }
+
+    return ids.filter((id) => !!map.getSource(id));
+}
+
+/**
+ * Returns the subset of image ids that currently exist in the style.
+ * @param {string} container
+ * @param {string[]} ids
+ * @returns {string[]}
+ */
+export function whichImagesExist(container, ids) {
+    const map = mapInstances[container];
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return [];
+    }
+
+    return ids.filter((id) => map.hasImage(id));
+}
+
+/**
+ * Ensures images exist: loads and adds only missing ones.
+ * @param {string} container
+ * @param {Array<{ id: string, url: string, options?: object }>} images
+ * @returns {Promise<string[]>} Ids that were newly added.
+ */
+export async function ensureImages(container, images) {
+    const map = mapInstances[container];
+    if (!Array.isArray(images) || images.length === 0) {
+        return [];
+    }
+
+    const missing = images.filter((image) => image?.id && image?.url && !map.hasImage(image.id));
+    await Promise.all(missing.map((image) => addImage(container, image.id, image.url, image.options)));
+    return missing.map((image) => image.id);
+}
+
+/**
+ * Returns a camera snapshot in one call.
+ * @param {string} container
+ * @returns {{ center: { lng: number, lat: number }, zoom: number, bearing: number, pitch: number }}
+ */
+export function getViewState(container) {
+    const map = mapInstances[container];
+    const center = map.getCenter();
+    return {
+        center: { lng: center.lng, lat: center.lat },
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch()
+    };
 }
 
 /**
@@ -1746,6 +1994,25 @@ export function moveLayer(container, id, beforeId) {
 }
 
 /**
+ * Sets layer z-order. <c>ids</c> are bottom-to-top (same convention as getLayersOrder).
+ * Missing ids are skipped.
+ * @param {string} container
+ * @param {string[]} ids
+ */
+export function setLayerOrder(container, ids) {
+    const map = mapInstances[container];
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return;
+    }
+
+    for (const id of ids) {
+        if (map.getLayer(id)) {
+            map.moveLayer(id);
+        }
+    }
+}
+
+/**
  * Pans the map by the specified offset.
  * @param {string} container - The map container.
  * @param {Array} offset - The pan offset.
@@ -1904,12 +2171,74 @@ export function removeLayer(container, id) {
 }
 
 /**
+ * Removes a layer when it exists; no-op otherwise.
+ * @param {string} container - The map container.
+ * @param {string} id - The ID of the layer to remove.
+ * @returns {boolean} True when a layer was removed.
+ */
+export function removeLayerIfExists(container, id) {
+    const map = mapInstances[container];
+    if (!map.getLayer(id)) {
+        return false;
+    }
+
+    map.removeLayer(id);
+    return true;
+}
+
+/**
+ * Removes multiple layers when they exist; missing ids are skipped.
+ * @param {string} container
+ * @param {string[]} ids
+ */
+export function removeLayersIfExist(container, ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return;
+    }
+
+    for (const id of ids) {
+        removeLayerIfExists(container, id);
+    }
+}
+
+/**
  * Removes a source from the map's style.
  * @param {string} container - The map container.
  * @param {string} id - The ID of the source to remove.
  */
 export function removeSource(container, id) {
     mapInstances[container].removeSource(id);
+}
+
+/**
+ * Removes a source when it exists; no-op otherwise.
+ * @param {string} container - The map container.
+ * @param {string} id - The ID of the source to remove.
+ * @returns {boolean} True when a source was removed.
+ */
+export function removeSourceIfExists(container, id) {
+    const map = mapInstances[container];
+    if (!map.getSource(id)) {
+        return false;
+    }
+
+    map.removeSource(id);
+    return true;
+}
+
+/**
+ * Removes multiple sources when they exist; missing ids are skipped.
+ * @param {string} container
+ * @param {string[]} ids
+ */
+export function removeSourcesIfExist(container, ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return;
+    }
+
+    for (const id of ids) {
+        removeSourceIfExists(container, id);
+    }
 }
 
 /**
@@ -2683,8 +3012,18 @@ export async function executeTransaction(container, data) {
             case "setSourceDataAsJson":
                 setSourceDataAsJson(container, d.data[0], d.data[1]);
                 break;
+            case "setSourceTiles":
             case "setVectorSourceTiles":
-                setVectorSourceTiles(container, d.data[0], d.data[1]);
+                setSourceTiles(container, d.data[0], d.data[1]);
+                break;
+            case "upsertTileSource":
+                upsertTileSource(container, d.data[0], d.data[1]);
+                break;
+            case "setSourceUrl":
+                setSourceUrl(container, d.data[0], d.data[1]);
+                break;
+            case "ensureImages":
+                await ensureImages(container, d.data[0]);
                 break;
             case "updateSourceData":
                 updateSourceData(container, d.data[0], d.data[1], d.data[2] ?? false);
@@ -2692,14 +3031,23 @@ export async function executeTransaction(container, data) {
             case "moveLayer":
                 moveLayer(container, d.data[0], d.data[1]);
                 break;
+            case "setLayerOrder":
+                setLayerOrder(container, d.data[0]);
+                break;
             case "setFilter":
                 setFilter(container, d.data[0], d.data[1], d.data[2]);
                 break;
             case "setLayoutProperty":
                 setLayoutProperty(container, d.data[0], d.data[1], d.data[2], d.data[3]);
                 break;
+            case "setLayoutProperties":
+                setLayoutProperties(container, d.data[0], d.data[1], d.data[2]);
+                break;
             case "setPaintProperty":
                 setPaintProperty(container, d.data[0], d.data[1], d.data[2], d.data[3]);
+                break;
+            case "setPaintProperties":
+                setPaintProperties(container, d.data[0], d.data[1], d.data[2]);
                 break;
             case "setLayerZoomRange":
                 setLayerZoomRange(container, d.data[0], d.data[1], d.data[2]);
@@ -2721,6 +3069,18 @@ export async function executeTransaction(container, data) {
                 break;
             case "setStyle":
                 setStyle(container, d.data[0], d.data[1]);
+                break;
+            case "removeLayerIfExists":
+                removeLayerIfExists(container, d.data[0]);
+                break;
+            case "removeLayersIfExist":
+                removeLayersIfExist(container, d.data[0]);
+                break;
+            case "removeSourceIfExists":
+                removeSourceIfExists(container, d.data[0]);
+                break;
+            case "removeSourcesIfExist":
+                removeSourcesIfExist(container, d.data[0]);
                 break;
             default:
                 console.warn(`Unknown transaction event: ${d.event}`);
@@ -2770,6 +3130,23 @@ export function setLayoutProperty(container, layerId, name, value, options) {
 }
 
 /**
+ * Sets multiple layout properties on a style layer in one call.
+ * @param {string} container
+ * @param {string} layerId
+ * @param {Record<string, *>} properties
+ * @param {object} [options]
+ */
+export function setLayoutProperties(container, layerId, properties, options) {
+    if (!properties) {
+        return;
+    }
+
+    for (const [name, value] of Object.entries(properties)) {
+        setLayoutProperty(container, layerId, name, value, options);
+    }
+}
+
+/**
  * Sets a paint property on a style layer.
  *
  * @param {string} container - The map container id.
@@ -2780,6 +3157,23 @@ export function setLayoutProperty(container, layerId, name, value, options) {
  */
 export function setPaintProperty(container, layerId, name, value, options) {
     mapInstances[container].setPaintProperty(layerId, name, value, options);
+}
+
+/**
+ * Sets multiple paint properties on a style layer in one call.
+ * @param {string} container
+ * @param {string} layerId
+ * @param {Record<string, *>} properties
+ * @param {object} [options]
+ */
+export function setPaintProperties(container, layerId, properties, options) {
+    if (!properties) {
+        return;
+    }
+
+    for (const [name, value] of Object.entries(properties)) {
+        setPaintProperty(container, layerId, name, value, options);
+    }
 }
 
 /**

@@ -836,6 +836,27 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Returns the subset of <paramref name="ids"/> that currently exist as style images.
+    /// </summary>
+    public async ValueTask<string[]> WhichImagesExist(IReadOnlyList<string> ids) =>
+        await _jsModule.InvokeAsync<string[]>("whichImagesExist", JsContainerId, ids);
+
+    /// <summary>
+    /// Loads and adds only images that are missing from the style.
+    /// </summary>
+    /// <returns>Ids that were newly added.</returns>
+    public async ValueTask<string[]> EnsureImages(IReadOnlyList<StyleImageSpec> images)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("ensureImages", images);
+            return [];
+        }
+
+        return await _jsModule.InvokeAsync<string[]>("ensureImages", JsContainerId, images);
+    }
+
+    /// <summary>
     /// Adds a layer to the MapLibre map with the specified properties and an optional position before another layer.
     /// </summary>
     /// <param name="layer">The layer to be added, defining the rendering and customization options.</param>
@@ -893,19 +914,57 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Updates tile URLs for an existing vector tile source without removing dependent layers.
+    /// Updates tile URLs for an existing raster or vector tile source without removing dependent layers.
     /// </summary>
-    /// <param name="id">The vector source id.</param>
+    /// <param name="id">The source id.</param>
     /// <param name="tiles">The new tile URL templates.</param>
-    public async ValueTask SetVectorSourceTiles(string id, IReadOnlyList<string> tiles)
+    public async ValueTask SetSourceTiles(string id, IReadOnlyList<string> tiles)
     {
         if (_bulkTransaction is not null)
         {
-            _bulkTransaction.Add("setVectorSourceTiles", id, tiles);
+            _bulkTransaction.Add("setSourceTiles", id, tiles);
             return;
         }
 
-        await _jsModule.InvokeVoidAsync("setVectorSourceTiles", JsContainerId, id, tiles);
+        await _jsModule.InvokeVoidAsync("setSourceTiles", JsContainerId, id, tiles);
+    }
+
+    /// <summary>
+    /// Adds a tile source when missing; otherwise updates <c>tiles</c> in place via <c>setTiles</c>.
+    /// </summary>
+    /// <returns><c>"added"</c> or <c>"updated"</c>.</returns>
+    public async ValueTask<string> UpsertTileSource(string id, ISource source)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("upsertTileSource", id, source);
+            return "queued";
+        }
+
+        return await _jsModule.InvokeAsync<string>("upsertTileSource", JsContainerId, id, source);
+    }
+
+    /// <summary>
+    /// Updates tile URLs for an existing vector tile source without removing dependent layers.
+    /// Prefer <see cref="SetSourceTiles"/> — this method is an alias that also works for raster sources.
+    /// </summary>
+    /// <param name="id">The vector source id.</param>
+    /// <param name="tiles">The new tile URL templates.</param>
+    public ValueTask SetVectorSourceTiles(string id, IReadOnlyList<string> tiles) =>
+        SetSourceTiles(id, tiles);
+
+    /// <summary>
+    /// Updates the TileJSON / style URL for an existing source that supports <c>setUrl</c>.
+    /// </summary>
+    public async ValueTask SetSourceUrl(string id, string url)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("setSourceUrl", id, url);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("setSourceUrl", JsContainerId, id, url);
     }
 
     /// <summary>
@@ -1195,6 +1254,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeAsync<LngLat>("getCenter", JsContainerId);
 
     /// <summary>
+    /// Returns center, zoom, bearing, and pitch in a single round-trip.
+    /// </summary>
+    public async ValueTask<MapViewState> GetViewState() =>
+        await _jsModule.InvokeAsync<MapViewState>("getViewState", JsContainerId);
+
+    /// <summary>
     /// Returns the value of centerClampedToGround.
     /// If true, the elevation of the center point will automatically be set to the terrain elevation (or zero if
     /// terrain is not enabled). If false, the elevation of the center point will default to sea level and will not
@@ -1281,6 +1346,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <returns>True if the layer exists, false otherwise.</returns>
     public async ValueTask<bool> HasLayer(string id) =>
         await _jsModule.InvokeAsync<bool>("hasLayer", JsContainerId, id);
+
+    /// <summary>
+    /// Returns the subset of <paramref name="ids"/> that currently exist as style layers.
+    /// </summary>
+    public async ValueTask<string[]> WhichLayersExist(IReadOnlyList<string> ids) =>
+        await _jsModule.InvokeAsync<string[]>("whichLayersExist", JsContainerId, ids);
 
     /// <summary>
     /// Return the ids of all layers currently in the style, including custom layers, in order.
@@ -1413,6 +1484,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <returns>True if the source exists, false otherwise.</returns>
     public async ValueTask<bool> HasSource(string id) =>
         await _jsModule.InvokeAsync<bool>("hasSource", JsContainerId, id);
+
+    /// <summary>
+    /// Returns the subset of <paramref name="ids"/> that currently exist as style sources.
+    /// </summary>
+    public async ValueTask<string[]> WhichSourcesExist(IReadOnlyList<string> ids) =>
+        await _jsModule.InvokeAsync<string[]>("whichSourcesExist", JsContainerId, ids);
 
     /// <summary>
     /// Returns the value of a global state property.
@@ -1707,6 +1784,21 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Sets layer z-order. <paramref name="ids"/> are bottom-to-top (same convention as <see cref="GetLayersOrder"/>).
+    /// Missing ids are skipped.
+    /// </summary>
+    public async ValueTask SetLayerOrder(IReadOnlyList<string> ids)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("setLayerOrder", ids);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("setLayerOrder", JsContainerId, ids);
+    }
+
+    /// <summary>
     /// Pans the map by a specified offset.
     /// </summary>
     /// <param name="offset">The offset by which to pan the map, in pixels.</param>
@@ -1916,6 +2008,60 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Removes a layer when it exists; no-op otherwise.
+    /// </summary>
+    public async ValueTask RemoveLayerIfExists(string id)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("removeLayerIfExists", id);
+            return;
+        }
+
+        if (_customLayerHandlers.TryRemove(id, out var handler))
+        {
+            handler.Dispose();
+        }
+
+        await _jsModule.InvokeVoidAsync("removeLayerIfExists", JsContainerId, id);
+    }
+
+    /// <summary>
+    /// Removes multiple layers when they exist; missing ids are skipped.
+    /// </summary>
+    public async ValueTask RemoveLayersIfExist(IReadOnlyList<string> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        if (_bulkTransaction is not null)
+        {
+            foreach (var id in ids)
+            {
+                if (_customLayerHandlers.TryRemove(id, out var handler))
+                {
+                    handler.Dispose();
+                }
+            }
+
+            _bulkTransaction.Add("removeLayersIfExist", ids);
+            return;
+        }
+
+        foreach (var id in ids)
+        {
+            if (_customLayerHandlers.TryRemove(id, out var handler))
+            {
+                handler.Dispose();
+            }
+        }
+
+        await _jsModule.InvokeVoidAsync("removeLayersIfExist", JsContainerId, ids);
+    }
+
+    /// <summary>
     /// Sets the zoom range of the specified style layer.
     /// </summary>
     public async ValueTask SetLayerZoomRange(string layerId, float minzoom, float maxzoom)
@@ -1941,6 +2087,39 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             return;
         }
         await _jsModule.InvokeVoidAsync("removeSource", JsContainerId, id);
+    }
+
+    /// <summary>
+    /// Removes a source when it exists; no-op otherwise.
+    /// </summary>
+    public async ValueTask RemoveSourceIfExists(string id)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("removeSourceIfExists", id);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("removeSourceIfExists", JsContainerId, id);
+    }
+
+    /// <summary>
+    /// Removes multiple sources when they exist; missing ids are skipped.
+    /// </summary>
+    public async ValueTask RemoveSourcesIfExist(IReadOnlyList<string> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("removeSourcesIfExist", ids);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("removeSourcesIfExist", JsContainerId, ids);
     }
 
     /// <summary>
@@ -2070,7 +2249,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <param name="options">
     /// Optional. An options object for configuring style setting behavior.
     /// </param>
-    public async ValueTask SetFilter(string layerId, object filter, StyleSetterOptions options)
+    public async ValueTask SetFilter(string layerId, object? filter, StyleSetterOptions? options = null)
     {
         if (_bulkTransaction is not null)
         {
@@ -2104,6 +2283,23 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Sets multiple layout properties on a style layer in one round-trip.
+    /// </summary>
+    public async ValueTask SetLayoutProperties(
+        string layerId,
+        IReadOnlyDictionary<string, object> properties,
+        StyleSetterOptions? options = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("setLayoutProperties", layerId, properties, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("setLayoutProperties", JsContainerId, layerId, properties, options);
+    }
+
+    /// <summary>
     /// Sets the value of a paint property in the specified style layer.
     /// </summary>
     /// <param name="layerId">The ID of the layer to set the paint property in.</param>
@@ -2119,6 +2315,23 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         await _jsModule.InvokeVoidAsync("setPaintProperty", JsContainerId, layerId, name, value, options);
+    }
+
+    /// <summary>
+    /// Sets multiple paint properties on a style layer in one round-trip.
+    /// </summary>
+    public async ValueTask SetPaintProperties(
+        string layerId,
+        IReadOnlyDictionary<string, object> properties,
+        StyleSetterOptions? options = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("setPaintProperties", layerId, properties, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("setPaintProperties", JsContainerId, layerId, properties, options);
     }
 
     /// <summary>
@@ -2218,6 +2431,29 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// </summary>
     public async ValueTask TriggerRepaint() =>
         await _jsModule.InvokeVoidAsync("triggerRepaint", JsContainerId);
+
+    /// <summary>
+    /// Waits until the map is idle (or <paramref name="timeoutMs"/> elapses).
+    /// </summary>
+    public async ValueTask WaitForIdle(int timeoutMs = 3000) =>
+        await _jsModule.InvokeVoidAsync("waitForIdle", JsContainerId, timeoutMs);
+
+    /// <summary>
+    /// Captures the map canvas as a PNG (or other) data URL after waiting for idle.
+    /// </summary>
+    public async ValueTask<string> CaptureCanvasDataUrl(
+        int idleTimeoutMs = 3000,
+        int renderTimeoutMs = 2500,
+        string mimeType = "image/png") =>
+        await _jsModule.InvokeAsync<string>(
+            "captureCanvasDataUrl",
+            JsContainerId,
+            new
+            {
+                idleTimeoutMs,
+                renderTimeoutMs,
+                mimeType
+            });
 
     /// <summary>
     /// Adjusts the map's style to a new configuration or URL.
