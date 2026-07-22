@@ -804,6 +804,37 @@ export function upsertTileSource(container, id, source) {
     }
 
     existing.setTiles(source.tiles);
+
+    // setTiles alone leaves minzoom/maxzoom from the original addSource call.
+    // Weather/vegetation overzoom (e.g. maxzoom 5) never took effect on updates —
+    // MapLibre kept requesting tiles up to the old maxzoom and lagged on every zoom step.
+    let zoomRangeChanged = false;
+    if (source.minzoom != null && existing.minzoom !== source.minzoom) {
+        existing.minzoom = source.minzoom;
+        zoomRangeChanged = true;
+    }
+    if (source.maxzoom != null && existing.maxzoom !== source.maxzoom) {
+        existing.maxzoom = source.maxzoom;
+        zoomRangeChanged = true;
+    }
+
+    if (zoomRangeChanged) {
+        const caches = map.style?.sourceCaches ?? map.style?._sourceCaches;
+        const cache = caches?.[id];
+        if (cache && typeof cache.clearTiles === "function") {
+            cache.clearTiles();
+            if (typeof cache.update === "function") {
+                cache.update(map.transform);
+            }
+        } else if (typeof existing.load === "function") {
+            existing.load();
+        }
+
+        if (typeof map.triggerRepaint === "function") {
+            map.triggerRepaint();
+        }
+    }
+
     return "updated";
 }
 

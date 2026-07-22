@@ -17,17 +17,27 @@ const createMultiLineString = (coordinates) => ({
 
 const createParallelsGeometry = (densityInDegrees, bounds) => {
     const geometry = [];
+    const west = Math.max(bounds.getWest(), MIN_LONGITUDE);
+    const east = Math.min(bounds.getEast(), MAX_LONGITUDE);
     let currentLattitude = Math.ceil(bounds.getSouth() / densityInDegrees) * densityInDegrees;
     for (; currentLattitude < bounds.getNorth(); currentLattitude += densityInDegrees) {
-        geometry.push([[MIN_LONGITUDE, currentLattitude], [MAX_LONGITUDE, currentLattitude]]);
+        if (currentLattitude < MIN_LATTITUDE || currentLattitude > MAX_LATTITUDE) {
+            continue;
+        }
+
+        // Clip to viewport instead of drawing full-world parallels.
+        geometry.push([[west, currentLattitude], [east, currentLattitude]]);
     }
     return geometry;
 };
 const createMeridiansGeometry = (densityInDegrees, bounds) => {
     const geometry = [];
+    const south = Math.max(bounds.getSouth(), MIN_LATTITUDE);
+    const north = Math.min(bounds.getNorth(), MAX_LATTITUDE);
     let currentLongitude = Math.ceil(bounds.getWest() / densityInDegrees) * densityInDegrees;
     for (; currentLongitude < bounds.getEast(); currentLongitude += densityInDegrees) {
-        geometry.push([[currentLongitude, MIN_LATTITUDE], [currentLongitude, MAX_LATTITUDE]]);
+        // Clip to viewport instead of drawing pole-to-pole meridians.
+        geometry.push([[currentLongitude, south], [currentLongitude, north]]);
     }
     return geometry;
 };
@@ -233,6 +243,10 @@ class GeoGrid {
         labels: [],
         labelsContainer: createLabelsContainerElement()
     };
+    _moveRafId = 0;
+    _isMoving = false;
+    _lastDensity = null;
+    _pendingRebuildLabels = false;
     constructor(options) {
         if (!options.map) {
             throw new Error('GeoGrid: "map" option is required');
@@ -266,7 +280,10 @@ class GeoGrid {
 
         if (!mapContainer.contains(this.elements.labelsContainer)) {
             mapContainer.appendChild(this.elements.labelsContainer);
+            // moveend: full rebuild after gesture. move: cheap rAF-throttled updates only.
+            this.map.on('movestart', this.onMoveStart);
             this.map.on('move', this.onMove);
+            this.map.on('moveend', this.onMoveEnd);
             this.map.on('remove', this.removeEventListeners);
             this.map.on('projectiontransition', this.onProjectionTransition);
         }
@@ -278,7 +295,7 @@ class GeoGrid {
         if (!this.map.getLayer(this.config.parallersLayerName)) {
             this.addLayersAndSources(densityInDegrees);
         } else {
-            this.onMove();
+            this.refresh(densityInDegrees);
         }
     };
     /**
@@ -316,32 +333,70 @@ class GeoGrid {
         }
 
         try {
+            this.map.off('movestart', this.onMoveStart);
             this.map.off('move', this.onMove);
+            this.map.off('moveend', this.onMoveEnd);
             this.map.off('projectiontransition', this.onProjectionTransition);
         } catch {
             // Map may already be destroyed during navigation/disposal.
         }
+
+        if (this._moveRafId) {
+            cancelAnimationFrame(this._moveRafId);
+            this._moveRafId = 0;
+        }
+    };
+    onMoveStart = () => {
+        this._isMoving = true;
+    };
+    onMoveEnd = () => {
+        this._isMoving = false;
+        this.scheduleRefresh({ rebuildLabels: true });
     };
     onMove = () => {
+        // Throttle to one update per frame. Skip label DOM rebuild while gesturing —
+        // that was the main cost (innerHTML clear + recreate on every move event).
+        this.scheduleRefresh({ rebuildLabels: false });
+    };
+    scheduleRefresh = ({ rebuildLabels }) => {
+        if (this._moveRafId) {
+            this._pendingRebuildLabels = this._pendingRebuildLabels || rebuildLabels;
+            return;
+        }
+
+        this._pendingRebuildLabels = rebuildLabels;
+        this._moveRafId = requestAnimationFrame(() => {
+            this._moveRafId = 0;
+            const densityInDegrees = this.config.gridDensity(
+                Math.max(Math.floor(this.map.getZoom()), 0));
+            const rebuildLabelsNow = this._pendingRebuildLabels || densityInDegrees !== this._lastDensity;
+            this._pendingRebuildLabels = false;
+            this.refresh(densityInDegrees, { rebuildLabels: rebuildLabelsNow });
+        });
+    };
+    refresh = (densityInDegrees, { rebuildLabels = true } = {}) => {
         if (typeof this.map.isStyleLoaded === 'function' && !this.map.isStyleLoaded()) {
             return;
         }
 
         this.updateLabelsVisibility();
-        this.removeLabels();
-        const densityInDegrees = this.config.gridDensity(
-            Math.max(Math.floor(this.map.getZoom()), 0));
 
         if (!this.hasGridLayersAndSources()) {
             this.addLayersAndSources(densityInDegrees);
             return;
         }
 
-        this.drawLabels(densityInDegrees);
         this.updateGrid(densityInDegrees);
+
+        if (rebuildLabels) {
+            this.removeLabels();
+            this.drawLabels(densityInDegrees);
+        }
+
+        this._lastDensity = densityInDegrees;
     };
     onProjectionTransition = () => {
-        this.map.once('idle', this.onMove);
+        this.map.once('idle', () => this.scheduleRefresh({ forceLabels: true }));
     };
     hasGridLayersAndSources = () =>
         !!this.map.getLayer(this.config.parallersLayerName)
