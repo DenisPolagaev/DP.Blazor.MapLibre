@@ -27,8 +27,9 @@
 
 @code {
     private MapLibre _map = new();
-    private FrameratePlugin _framerate = new();
+    private readonly FrameratePlugin _framerate = new();
     private bool _fpsVisible = true;
+    private bool _pendingFramerateAdd;
 
     private readonly MapOptions _mapOptions = new()
     {
@@ -37,21 +38,46 @@
         Zoom = 5,
     };
 
+    private static readonly FramerateControlOptions DefaultOptions = new()
+    {
+        Color = "#7cf859",
+        Background = "rgba(0, 0, 0, 0.85)",
+    };
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             await _map.RegisterPlugin(_framerate);
+
+            if (_pendingFramerateAdd)
+            {
+                await AddFramerateIfVisibleAsync();
+            }
         }
     }
 
     private async Task OnMapLoad(EventArgs _)
     {
-        await _framerate.AddFramerateControlAsync(new FramerateControlOptions
+        if (!_framerate.IsInitialized)
         {
-            Color = "#7cf859",
-            Background = "rgba(0, 0, 0, 0.85)",
-        }, ControlPosition.TopRight);
+            _pendingFramerateAdd = true;
+            return;
+        }
+
+        await AddFramerateIfVisibleAsync();
+    }
+
+    private async Task AddFramerateIfVisibleAsync()
+    {
+        _pendingFramerateAdd = false;
+
+        if (!_fpsVisible)
+        {
+            return;
+        }
+
+        await _framerate.AddFramerateControlAsync(DefaultOptions, ControlPosition.TopRight);
     }
 
     private async Task ToggleFpsAsync(ChangeEventArgs args)
@@ -60,11 +86,7 @@
 
         if (_fpsVisible)
         {
-            await _framerate.AddFramerateControlAsync(new FramerateControlOptions
-            {
-                Color = "#7cf859",
-                Background = "rgba(0, 0, 0, 0.85)",
-            }, ControlPosition.TopRight);
+            await _framerate.AddFramerateControlAsync(DefaultOptions, ControlPosition.TopRight);
         }
         else
         {

@@ -31,8 +31,11 @@ public class MapboxGlDrawPlugin : IMapLibrePlugin
     /// Only has access to the JavaScript module and functions within for the plugin itself.
     /// Set via <see cref="Initialize"/> when plugins are loaded by the <see cref="MapLibre"/>.
     /// </remarks>
-    private IJSObjectReference PluginJsModule { get; set; } = null!;
-    
+    private IJSObjectReference? PluginJsModule { get; set; }
+
+    /// <summary>Whether <see cref="Initialize"/> completed successfully.</summary>
+    public bool IsInitialized => PluginJsModule is not null;
+
     /// <summary>
     /// A reference to the <see cref="IJSObjectReference"/> JavaScript module instance for the Mapbox GL JS library.
     /// </summary>
@@ -89,7 +92,7 @@ public class MapboxGlDrawPlugin : IMapLibrePlugin
     /// <param name="drawControl">The type of control to be added to the map.</param>
     /// <returns>A task that represents the asynchronous operation of adding the control.</returns>
     public async ValueTask AddControl(object drawControl) =>
-        await PluginJsModule.InvokeVoidAsync("addControl", drawControl);
+        await PluginJsModule!.InvokeVoidAsync("addControl", drawControl);
 
     /// <summary>
     /// Adds a feature to the map's draw control.
@@ -97,13 +100,17 @@ public class MapboxGlDrawPlugin : IMapLibrePlugin
     /// <param name="feature">The feature to be added to the draw control.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     public async ValueTask AddFeature(FeatureFeature feature) =>
-        await PluginJsModule.InvokeVoidAsync("addFeature", feature);
+        await PluginJsModule!.InvokeVoidAsync("addFeature", feature);
     
     public async ValueTask DisposeAsync()
     {
         try
         {
-            await PluginJsModule.DisposeAsync();
+            if (PluginJsModule is not null)
+            {
+                await PluginJsModule.DisposeAsync();
+            }
+
             await MapboxJsModule.DisposeAsync();
             await TurfJsModule.DisposeAsync();
         }

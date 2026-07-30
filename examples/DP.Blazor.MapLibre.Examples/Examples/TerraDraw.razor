@@ -29,10 +29,11 @@
 
 @code {
     private MapLibre _map = new();
-    private TerraDrawPlugin _terraDraw = new();
+    private readonly TerraDrawPlugin _terraDraw = new();
     private Listener? _changeListener;
     private string _geoJsonSnapshot = "Draw on the map using the Terra Draw toolbar.";
     private bool _expanded = true;
+    private bool _pendingTerraDrawSetup;
 
     private readonly MapOptions _mapOptions = new()
     {
@@ -46,11 +47,29 @@
         if (firstRender)
         {
             await _map.RegisterPlugin(_terraDraw);
+
+            if (_pendingTerraDrawSetup)
+            {
+                await SetupTerraDrawAsync();
+            }
         }
     }
 
     private async Task OnMapLoad(EventArgs _)
     {
+        if (!_terraDraw.IsInitialized)
+        {
+            _pendingTerraDrawSetup = true;
+            return;
+        }
+
+        await SetupTerraDrawAsync();
+    }
+
+    private async Task SetupTerraDrawAsync()
+    {
+        _pendingTerraDrawSetup = false;
+
         await _terraDraw.AddDrawControlAsync(new TerradrawControlOptions
         {
             Open = true,

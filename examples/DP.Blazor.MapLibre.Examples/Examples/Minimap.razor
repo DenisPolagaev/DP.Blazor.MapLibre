@@ -27,8 +27,9 @@
 
 @code {
     private MapLibre _map = new();
-    private MinimapPlugin _minimap = new();
+    private readonly MinimapPlugin _minimap = new();
     private bool _minimapVisible = true;
+    private bool _pendingMinimapAdd;
 
     private readonly MapOptions _mapOptions = new()
     {
@@ -37,25 +38,51 @@
         Zoom = 11,
     };
 
+    private static readonly MinimapControlOptions DefaultOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap,
+        Width = "220px",
+        Height = "140px",
+        LineColor = "#2563eb",
+        FillColor = "#f97316",
+        FillOpacity = 0.2,
+    };
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             await _map.RegisterPlugin(_minimap);
+
+            if (_pendingMinimapAdd)
+            {
+                await AddMinimapIfVisibleAsync();
+            }
         }
     }
 
     private async Task OnMapLoad(EventArgs _)
     {
-        await _minimap.AddMinimapControlAsync(new MinimapControlOptions
+        // OnLoad can race ahead of parent OnAfterRender RegisterPlugin (same pattern as Geoportal / GeoGrid).
+        if (!_minimap.IsInitialized)
         {
-            Style = ExampleMapStyles.OpenStreetMap,
-            Width = "220px",
-            Height = "140px",
-            LineColor = "#2563eb",
-            FillColor = "#f97316",
-            FillOpacity = 0.2,
-        }, ControlPosition.BottomRight);
+            _pendingMinimapAdd = true;
+            return;
+        }
+
+        await AddMinimapIfVisibleAsync();
+    }
+
+    private async Task AddMinimapIfVisibleAsync()
+    {
+        _pendingMinimapAdd = false;
+
+        if (!_minimapVisible)
+        {
+            return;
+        }
+
+        await _minimap.AddMinimapControlAsync(DefaultOptions, ControlPosition.BottomRight);
     }
 
     private async Task ToggleMinimapAsync(ChangeEventArgs args)
@@ -64,15 +91,7 @@
 
         if (_minimapVisible)
         {
-            await _minimap.AddMinimapControlAsync(new MinimapControlOptions
-            {
-                Style = ExampleMapStyles.OpenStreetMap,
-                Width = "220px",
-                Height = "140px",
-                LineColor = "#2563eb",
-                FillColor = "#f97316",
-                FillOpacity = 0.2,
-            }, ControlPosition.BottomRight);
+            await _minimap.AddMinimapControlAsync(DefaultOptions, ControlPosition.BottomRight);
         }
         else
         {

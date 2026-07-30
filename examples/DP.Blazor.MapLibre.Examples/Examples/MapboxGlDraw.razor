@@ -18,6 +18,7 @@
 @code {
     private MapLibre _mapListener { get; set; } = new MapLibre();
     private MapboxGlDrawPlugin _mapboxGlPlugin = new MapboxGlDrawPlugin();
+    private bool _pendingDrawSetup;
 
     private readonly MapOptions _mapOptions = new()
     {
@@ -32,11 +33,28 @@
         if (firstRender)
         {
             await _mapListener.RegisterPlugin(_mapboxGlPlugin);
+
+            if (_pendingDrawSetup)
+            {
+                await SetupDrawAsync();
+            }
         }
     }
 
     private async Task OnLoad(EventArgs args)
     {
+        if (!_mapboxGlPlugin.IsInitialized)
+        {
+            _pendingDrawSetup = true;
+            return;
+        }
+
+        await SetupDrawAsync();
+    }
+
+    private async Task SetupDrawAsync()
+    {
+        _pendingDrawSetup = false;
         Console.WriteLine("Map loaded successfully.");
         try
         {

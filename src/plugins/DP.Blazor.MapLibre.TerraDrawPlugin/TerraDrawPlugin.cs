@@ -13,12 +13,16 @@ public sealed partial class TerraDrawPlugin : IMapLibrePlugin
     private IJSObjectReference _pluginJsModule = null!;
     private readonly ConcurrentDictionary<string, DotNetObjectReference<CallbackHandler>> _references = new();
 
+    /// <summary>Whether <see cref="Initialize"/> completed successfully.</summary>
+    public bool IsInitialized { get; private set; }
+
     public async Task Initialize(IJSObjectReference map, IJSRuntime runtime)
     {
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
             "import", "./_content/TerraDrawPlugin/TerraDrawPlugin.js");
         await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
+        IsInitialized = true;
     }
 
     public async ValueTask DisposeAsync()
