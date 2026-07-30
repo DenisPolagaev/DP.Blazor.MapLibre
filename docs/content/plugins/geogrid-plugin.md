@@ -2,12 +2,12 @@
 
 The **Geo grid plugin** adds a geographic graticule (meridians and parallels) with coordinate labels on the map edges. It wraps [geogrid-maplibre-gl](https://github.com/falseinput/geogrid-maplibre-gl) for MapLibre GL JS.
 
-The plugin project lives at `src/plugins/Community.Blazor.MapLibre.GeoGridPlugin`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.GeoGridPlugin`.
 
 ## Installation
 
 ```shell
-dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.GeoGridPlugin/Community.Blazor.MapLibre.GeoGridPlugin.csproj
+dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj
 ```
 
 ## Stylesheet
@@ -29,7 +29,7 @@ Register the plugin with the `MapLibre` component in `OnAfterRenderAsync`, then 
 Because `OnStyleLoad` can fire before the parent page registers the plugin, either use `OnLoad` (as in the example below) or defer adding until after `RegisterPlugin` completes.
 
 ```csharp
-@using Community.Blazor.MapLibre.GeoGridPlugin
+@using DP.Blazor.MapLibre.GeoGridPlugin
 
 <link rel="stylesheet" href="_content/GeoGridPlugin/geogrid/geogrid.css" />
 

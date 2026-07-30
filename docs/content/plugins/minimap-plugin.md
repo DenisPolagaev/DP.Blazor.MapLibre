@@ -2,19 +2,19 @@
 
 The **Minimap plugin** adds an overview map with a draggable viewport rectangle. It wraps [mapboxgl-minimap](https://github.com/aesqe/mapboxgl-minimap) as an optional plugin for MapLibre GL JS.
 
-The plugin project lives at `src/plugins/Community.Blazor.MapLibre.MinimapPlugin`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.MinimapPlugin`.
 
 ## Installation
 
 ```shell
-dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.MinimapPlugin/Community.Blazor.MapLibre.MinimapPlugin.csproj
+dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj
 ```
 
 ## Register the plugin
 
 ```csharp
-@using Community.Blazor.MapLibre.MinimapPlugin
-@using Community.Blazor.MapLibre.Models.Control
+@using DP.Blazor.MapLibre.MinimapPlugin
+@using DP.Blazor.MapLibre.Models.Control
 
 <MapLibre @ref="_map" Options="_options" OnLoad="OnMapLoad" />
 

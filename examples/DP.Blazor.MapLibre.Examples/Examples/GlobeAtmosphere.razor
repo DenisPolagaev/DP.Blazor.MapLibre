@@ -1,0 +1,52 @@
+@page "/examples/globe-atmosphere"
+
+@using DP.Blazor.MapLibre.Models
+@using DP.Blazor.MapLibre.Models.Style
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/GlobeAtmosphere.razor"/>
+
+<p class="text-muted small mb-2">
+    Globe projection with Sentinel-2 cloudless imagery and atmospheric halo (<code>SetSky</code>, <code>SetLight</code>).
+</p>
+
+<MapLibre @ref="_map"
+          Options="_mapOptions"
+          OnStyleLoad="@OnStyleLoad"
+          Class="rounded-top"
+          Height="600px">
+</MapLibre>
+
+@code {
+    private MapLibre _map = new();
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = ExampleMapStyles.GlobeSatellite,
+        Center = new LngLat { Longitude = 137.92, Latitude = 36.26 },
+        Zoom = 1.5,
+        Pitch = 0,
+    };
+
+    private async Task OnStyleLoad(EventArgs _)
+    {
+        await _map.SetProjection(new ProjectionSpecification { Type = "globe" });
+
+        await _map.SetSky(new SkySpecification
+        {
+            SkyColor = "#87CEEB",
+            HorizonColor = "#B0E0E6",
+            FogColor = "#F0F8FF",
+            SkyHorizonBlend = 0.5,
+            HorizonFogBlend = 0.6,
+            AtmosphereBlend = 1.0,
+        });
+
+        await _map.SetLight(new LightSpecification
+        {
+            Anchor = "map",
+            Position = [1.5, 90, 80],
+            Color = "#ffffff",
+            Intensity = 0.4,
+        });
+    }
+}

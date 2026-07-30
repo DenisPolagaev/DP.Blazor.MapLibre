@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+    <PropertyGroup>
+        <IsPackable>false</IsPackable>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Components.CustomElements" Version="10.0.0"/>
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0"/>
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.0" PrivateAssets="all"/>
+    </ItemGroup>
+
+    <!-- Reference the Blazor web component projects -->
+    <ItemGroup>
+        <ProjectReference Include="..\DP.Blazor.MapLibre.Examples.MapboxGlPlugin\DP.Blazor.MapLibre.Examples.MapboxGlPlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.ComparePlugin\DP.Blazor.MapLibre.ComparePlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.TerraDrawPlugin\DP.Blazor.MapLibre.TerraDrawPlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.MinimapPlugin\DP.Blazor.MapLibre.MinimapPlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.FrameratePlugin\DP.Blazor.MapLibre.FrameratePlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.GeoGridPlugin\DP.Blazor.MapLibre.GeoGridPlugin.csproj"/>
+    </ItemGroup>
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="wwwroot\sample-data\weather.json" />
+    </ItemGroup>
+
+    <!-- This is required to copy the Blazor build output to the publish location -->
+    <Target Name="MoveContent" AfterTargets="Publish">
+        <ItemGroup>
+            <FilesToMove Include="$(PublishDir)wwwroot\**\*"/>
+        </ItemGroup>
+        <Move SourceFiles="@(FilesToMove)" DestinationFolder="$(PublishDir)\%(RecursiveDir)"/>
+        <RemoveDir Directories="$(PublishDir)wwwroot"/>
+    </Target>
+
+</Project>

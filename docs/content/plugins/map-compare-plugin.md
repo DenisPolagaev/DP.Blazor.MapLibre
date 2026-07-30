@@ -2,20 +2,20 @@
 
 The **Map Compare plugin** adds a swipe slider to compare two `MapLibre` maps side by side (or top and bottom). It wraps [maplibre-gl-compare](https://github.com/maplibre/maplibre-gl-compare) from the MapLibre project.
 
-The plugin project lives at `src/plugins/Community.Blazor.MapLibre.ComparePlugin`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.ComparePlugin`.
 
 ## Installation
 
 ```shell
-dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.ComparePlugin/Community.Blazor.MapLibre.ComparePlugin.csproj
+dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj
 ```
 
 Add maplibre-gl and maplibre-gl-compare to your host page **before** Blazor starts, as described in the [maplibre-gl-compare README](https://github.com/maplibre/maplibre-gl-compare):
 
 ```html
-<link href="_content/Community.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
+<link href="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
 <link href="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.css" rel="stylesheet" />
-<script src="_content/Community.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js"></script>
+<script src="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js"></script>
 <script src="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.js"></script>
 ```
 
@@ -26,7 +26,7 @@ The plugin can also load these assets dynamically via `InitializeAsync`, but the
 Place two `MapLibre` components inside a shared container (both maps must use `position: absolute` and fill the container), then create the compare control after both maps have loaded:
 
 ```csharp
-@using Community.Blazor.MapLibre.ComparePlugin
+@using DP.Blazor.MapLibre.ComparePlugin
 
 <div id="comparison-container" class="comparison-container">
     <MapLibre MapId="before" Options="_beforeOptions" OnLoad="OnMapsReady" Class="map" Height="100%" />
@@ -50,7 +50,7 @@ Place two `MapLibre` components inside a shared container (both maps must use `p
 }
 ```
 
-The container CSS should position both maps absolutely so they overlap. See `examples/Community.Blazor.MapLibre.Examples/Examples/MapCompare.razor` for a full example.
+The container CSS should position both maps absolutely so they overlap. See `examples/DP.Blazor.MapLibre.Examples/Examples/MapCompare.razor` for a full example.
 
 ## API
 

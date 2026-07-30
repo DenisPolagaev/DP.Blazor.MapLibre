@@ -1,38 +1,34 @@
-# Blazor MapLibre
+# DP.Blazor.MapLibre
 
-## About The Project
+## About
 
-This project should help people working on Blazor projects to use maps more easily.
+Blazor wrapper around MapLibre GL JS. This project **started as a fork** of [Yet-another-solution/Blazor.MapLibre](https://github.com/Yet-another-solution/Blazor.MapLibre) and is maintained independently as **DP.Blazor.MapLibre**.
 
 ## Getting Started
 
 ### Prerequisites
 
-The library and plugins target .NET 8, 9, and 10. Examples and the documentation site use .NET 10 — install the [.NET 10 SDK](https://dotnet.microsoft.com/download) or newer to build and run them.
+The library and plugins target .NET 8, 9, and 10. Examples and this documentation site use .NET 10 — install the [.NET 10 SDK](https://dotnet.microsoft.com/download) or newer to build and run them.
 
 ### Installation
 
-Install the package:
-
 ```bash
-dotnet add package Community.Blazor.MapLibre
+dotnet add package DP.Blazor.MapLibre
 ```
 
-Add this to head of your file to load the css for the maps:
+Add this to the head of your app to load the map CSS:
 
 ```html
-<link href="_content/Community.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
+<link href="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
 ```
 
 ## Usage
-
-After the package is installed you can use it with simple:
 
 ```csharp
 <MapLibre />
 ```
 
-You can customize the map more with options using `MapOptions.cs`:
+With options:
 
 ```csharp
 <MapLibre Options="_mapOptions"></MapLibre>
@@ -42,7 +38,3 @@ You can customize the map more with options using `MapOptions.cs`:
     private readonly MapOptions _mapOptions = new MapOptions();
 }
 ```
-
-## Plugins
-
-Optional map extensions (Terra Draw, Map Compare, Minimap, Frame rate, and more) live in the [Plugins](content/plugins/index.md) section. See [Creating a plugin](content/plugins/create-a-plugin.md) to build your own.

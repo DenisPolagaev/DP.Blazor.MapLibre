@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+    <PropertyGroup>
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>DP.Blazor.MapLibre.ComparePlugin</PackageId>
+        <Description>Map compare (swipe) plugin for DP.Blazor.MapLibre.</Description>
+        <StaticWebAssetBasePath>_content/MapComparePlugin</StaticWebAssetBasePath>
+        <RootNamespace>DP.Blazor.MapLibre.ComparePlugin</RootNamespace>
+        <IsPackable>true</IsPackable>
+        <PackageTags>Blazor;MapLibre;Compare;Plugin</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="wwwroot\**\*" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\DP.Blazor.MapLibre\DP.Blazor.MapLibre.csproj" />
+    </ItemGroup>
+</Project>

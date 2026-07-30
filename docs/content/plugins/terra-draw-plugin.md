@@ -2,14 +2,14 @@
 
 The **Terra Draw plugin** adds interactive drawing and geometry editing to a `MapLibre` map. It wraps [@watergis/maplibre-gl-terradraw](https://github.com/watergis/maplibre-gl-terradraw) on top of [Terra Draw](https://github.com/JamesLMilner/terra-draw), including the built-in toolbar controls for draw, measure, and Valhalla workflows.
 
-The plugin project lives at `src/plugins/Community.Blazor.MapLibre.TerraDrawPlugin`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.TerraDrawPlugin`.
 
 ## Installation
 
 Add a project reference to the Terra Draw plugin Razor Class Library:
 
 ```shell
-dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.TerraDrawPlugin/Community.Blazor.MapLibre.TerraDrawPlugin.csproj
+dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.TerraDrawPlugin/DP.Blazor.MapLibre.TerraDrawPlugin.csproj
 ```
 
 ## Register the plugin
@@ -17,8 +17,8 @@ dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.TerraDrawPlugin
 Register the plugin on the `MapLibre` component in `OnAfterRenderAsync` with `firstRender` so the `@ref` to the map is available:
 
 ```csharp
-@using Community.Blazor.MapLibre.TerraDrawPlugin
-@using Community.Blazor.MapLibre.Models.Control
+@using DP.Blazor.MapLibre.TerraDrawPlugin
+@using DP.Blazor.MapLibre.Models.Control
 
 <MapLibre @ref="_map" Options="_options" OnLoad="OnMapLoad" />
 

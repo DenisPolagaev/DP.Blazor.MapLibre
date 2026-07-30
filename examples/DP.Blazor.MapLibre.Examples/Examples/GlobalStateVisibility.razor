@@ -1,0 +1,80 @@
+@page "/examples/global-state-visibility"
+
+@using DP.Blazor.MapLibre.Models.Feature
+@using DP.Blazor.MapLibre.Models.Layers
+@using DP.Blazor.MapLibre.Models.Sources
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/GlobalStateVisibility.razor"/>
+
+<div class="mb-2">
+    <button class="btn btn-primary btn-sm" @onclick="ToggleVisibility">
+        Toggle Maine polygon (@(_visible ? "visible" : "hidden"))
+    </button>
+</div>
+
+<MapLibre @ref="_map"
+          Options="_options"
+          OnLoad="HandleMapLoad"
+          Class="rounded-top"
+          Height="600px"/>
+
+@code {
+    private MapLibre _map = new();
+    private bool _visible = true;
+
+    private readonly MapOptions _options = new()
+    {
+        Center = new LngLat { Longitude = -68.99, Latitude = 45.18 },
+        Zoom = 5,
+    };
+
+    private async Task HandleMapLoad(EventArgs _)
+    {
+        await _map.SetGlobalStateProperty("showMaine", true);
+
+        await _map.AddSource("maine", new GeoJsonSource
+        {
+            Data = new FeatureFeature
+            {
+                Geometry = new PolygonGeometry
+                {
+                    Coordinates =
+                    [
+                        [
+                            [-67.13734351262877, 45.137451890638886],
+                            [-66.96466, 44.8097],
+                            [-68.03252, 44.3252],
+                            [-69.06, 43.98],
+                            [-70.11617, 43.68405],
+                            [-70.64573401557249, 43.090083319667144],
+                            [-67.13734351262877, 45.137451890638886],
+                        ],
+                    ],
+                },
+            },
+        });
+
+        await _map.AddLayer(new FillLayer
+        {
+            Id = "maine-fill",
+            Source = "maine",
+            Paint = new FillLayerPaint
+            {
+                FillColor = "#4e8752",
+                FillOpacity = 0.8,
+            },
+        });
+
+        await _map.SetLayoutProperty(
+            "maine-fill",
+            "visibility",
+            new object[] { "case", new object[] { "boolean", new object[] { "global-state", "showMaine" }, false }, "visible", "none" },
+            null);
+    }
+
+    private async Task ToggleVisibility()
+    {
+        _visible = !_visible;
+        await _map.SetGlobalStateProperty("showMaine", _visible);
+    }
+}

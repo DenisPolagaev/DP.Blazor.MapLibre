@@ -3,7 +3,7 @@ name: PR Build and Test
 on:
   pull_request:
     branches:
-      - "main"
+      - main
       - "release/*"
 
 jobs:
@@ -13,21 +13,22 @@ jobs:
     strategy:
       matrix:
         project:
-          - src/Community.Blazor.MapLibre/Community.Blazor.MapLibre.csproj
-          - docs/Community.Blazor.MapLibre.Documentation.csproj
-          - examples/Community.Blazor.MapLibre.Examples/Community.Blazor.MapLibre.Examples.csproj
-          - examples/Community.Blazor.MapLibre.Examples.MapboxGlPlugin/Community.Blazor.MapLibre.Examples.MapboxGlPlugin.csproj
-          - src/plugins/Community.Blazor.MapLibre.TerraDrawPlugin/Community.Blazor.MapLibre.TerraDrawPlugin.csproj
-          - src/plugins/Community.Blazor.MapLibre.ComparePlugin/Community.Blazor.MapLibre.ComparePlugin.csproj
-          - src/plugins/Community.Blazor.MapLibre.MinimapPlugin/Community.Blazor.MapLibre.MinimapPlugin.csproj
-          - src/plugins/Community.Blazor.MapLibre.FrameratePlugin/Community.Blazor.MapLibre.FrameratePlugin.csproj
+          - src/DP.Blazor.MapLibre/DP.Blazor.MapLibre.csproj
+          - docs/DP.Blazor.MapLibre.Documentation.csproj
+          - examples/DP.Blazor.MapLibre.Examples/DP.Blazor.MapLibre.Examples.csproj
+          - examples/DP.Blazor.MapLibre.Examples.MapboxGlPlugin/DP.Blazor.MapLibre.Examples.MapboxGlPlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.TerraDrawPlugin/DP.Blazor.MapLibre.TerraDrawPlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
@@ -35,7 +36,7 @@ jobs:
             10.0.x
 
       - name: Restore all project dependencies
-        run: dotnet restore
+        run: dotnet restore DP.Blazor.MapLibre.slnx
 
       - name: Build ${{ matrix.project }}
         run: dotnet build ${{ matrix.project }} --no-restore -c Release
@@ -47,10 +48,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
@@ -58,10 +59,10 @@ jobs:
             10.0.x
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore DP.Blazor.MapLibre.slnx
 
       - name: Build test project
-        run: dotnet build tests/Community.Blazor.MapLibre.Tests/Community.Blazor.MapLibre.Tests.csproj --no-restore -c Release
+        run: dotnet build tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-restore -c Release
 
       - name: Run tests
-        run: dotnet test tests/Community.Blazor.MapLibre.Tests/Community.Blazor.MapLibre.Tests.csproj --no-build -c Release --verbosity normal
+        run: dotnet test tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-build -c Release --verbosity normal

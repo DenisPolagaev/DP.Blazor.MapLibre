@@ -1,6 +1,6 @@
 # Creating a plugin
 
-`Community.Blazor.MapLibre` is a wrapper library around the core [MapLibre GL JS JavaScript API](https://maplibre.org/maplibre-gl-js/docs/API/). You may want to interop with the MapLibre map in ways that cannot be achieved using the wrapper library, and for this, you can add a plugin.
+`DP.Blazor.MapLibre` is a wrapper library around the core [MapLibre GL JS JavaScript API](https://maplibre.org/maplibre-gl-js/docs/API/). You may want to interop with the MapLibre map in ways that cannot be achieved using the wrapper library, and for this, you can add a plugin.
 
 At a high-level, a plugin can, but not exclusively:
 
@@ -35,12 +35,12 @@ map method.
 
     _The existing files in the project are not relevant here and can be ignored/delete later._
 
-2. Add a reference to the `Community.Blazor.MapLibre` NuGet package.
+2. Add a reference to the `DP.Blazor.MapLibre` NuGet package.
 
     _From the directory containing the project (`.csproj` file)._
 
     ```shell
-    dotnet add package Community.Blazor.MapLibre
+    dotnet add package DP.Blazor.MapLibre
     ```
 
 3. Create a plugin JavaScript module.

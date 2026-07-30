@@ -1,0 +1,87 @@
+@page "/examples/fill-extrusion"
+
+@using DP.Blazor.MapLibre.Models.Feature
+@using DP.Blazor.MapLibre.Models.Layers
+@using DP.Blazor.MapLibre.Models.Sources
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/FillExtrusion.razor"/>
+
+<MapLibre @ref="_map"
+          Options="_mapOptions"
+          OnLoad="@OnMapLoad"
+          Class="rounded-top"
+          Height="600px">
+</MapLibre>
+
+@code {
+    private MapLibre _map = new();
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap,
+        Center = new LngLat { Longitude = -74.006, Latitude = 40.7125 },
+        Zoom = 15.5,
+        Pitch = 45,
+        Bearing = -17,
+    };
+
+    private async Task OnMapLoad(EventArgs _)
+    {
+        await _map.AddSource("buildings", new GeoJsonSource
+        {
+            Data = new FeatureCollection
+            {
+                Features =
+                [
+                    new FeatureFeature
+                    {
+                        Geometry = new PolygonGeometry
+                        {
+                            Coordinates =
+                            [
+                                [
+                                    [-74.0068, 40.7132],
+                                    [-74.0058, 40.7132],
+                                    [-74.0058, 40.7122],
+                                    [-74.0068, 40.7122],
+                                    [-74.0068, 40.7132],
+                                ],
+                            ],
+                        },
+                        Properties = new Dictionary<string, object> { ["height"] = 80, ["base"] = 0 },
+                    },
+                    new FeatureFeature
+                    {
+                        Geometry = new PolygonGeometry
+                        {
+                            Coordinates =
+                            [
+                                [
+                                    [-74.0062, 40.7128],
+                                    [-74.0054, 40.7128],
+                                    [-74.0054, 40.7120],
+                                    [-74.0062, 40.7120],
+                                    [-74.0062, 40.7128],
+                                ],
+                            ],
+                        },
+                        Properties = new Dictionary<string, object> { ["height"] = 120, ["base"] = 0 },
+                    },
+                ],
+            },
+        });
+
+        await _map.AddLayer(new FillExtrusionLayer
+        {
+            Id = "buildings-3d",
+            Source = "buildings",
+            Paint = new FillExtrusionLayerPaint
+            {
+                FillExtrusionColor = "#aaa",
+                FillExtrusionHeight = new System.Text.Json.Nodes.JsonArray { "get", "height" },
+                FillExtrusionBase = new System.Text.Json.Nodes.JsonArray { "get", "base" },
+                FillExtrusionOpacity = 0.9,
+            },
+        });
+    }
+}

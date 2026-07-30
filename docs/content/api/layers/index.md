@@ -1,6 +1,6 @@
 # Layers overview
 
-Community.Blazor.MapLibre provides typed C# models for [MapLibre style layers](https://maplibre.org/maplibre-style-spec/layers/).
+DP.Blazor.MapLibre provides typed C# models for [MapLibre style layers](https://maplibre.org/maplibre-style-spec/layers/).
 
 | Spec type | C# class | Typical source |
 |-----------|----------|----------------|

@@ -2,14 +2,14 @@
 
 The **Mapbox GL Draw plugin** is a reference implementation in the examples solution. It integrates [Mapbox GL Draw](https://github.com/mapbox/mapbox-gl-draw) for drawing and editing features on a MapLibre map.
 
-The plugin project lives at `examples/Community.Blazor.MapLibre.Examples.MapboxGlPlugin`. Use it as a starting point for plugins that depend on third-party JavaScript libraries loaded as ES modules.
+The plugin project lives at `examples/DP.Blazor.MapLibre.Examples.MapboxGlPlugin`. Use it as a starting point for plugins that depend on third-party JavaScript libraries loaded as ES modules.
 
 ## Installation
 
 Add a project reference from your Blazor app:
 
 ```shell
-dotnet add reference ../../examples/Community.Blazor.MapLibre.Examples.MapboxGlPlugin/Community.Blazor.MapLibre.Examples.MapboxGlPlugin.csproj
+dotnet add reference ../../examples/DP.Blazor.MapLibre.Examples.MapboxGlPlugin/DP.Blazor.MapLibre.Examples.MapboxGlPlugin.csproj
 ```
 
 Include the Mapbox GL Draw stylesheet on your host page:
@@ -21,7 +21,7 @@ Include the Mapbox GL Draw stylesheet on your host page:
 ## Register the plugin
 
 ```csharp
-@using Community.Blazor.MapLibre.Examples.MapboxGlPlugin
+@using DP.Blazor.MapLibre.Examples.MapboxGlPlugin
 
 <MapLibre @ref="_map" Options="_options" OnLoad="OnMapLoad" />
 

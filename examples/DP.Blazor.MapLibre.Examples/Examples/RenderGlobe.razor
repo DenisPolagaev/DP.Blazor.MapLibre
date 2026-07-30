@@ -1,0 +1,29 @@
+@page "/examples/render-globe"
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/RenderGlobe.razor"/>
+
+<MapLibre @ref="_mapListener"
+          Options="_mapOptions"
+          OnStyleLoad="OnStyleLoad"
+          Class="rounded-top"
+          Height="600px">
+</MapLibre>
+
+@code {
+    private MapLibre _mapListener { get; set; } = new MapLibre();
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap
+    };
+
+
+    private async Task OnStyleLoad(EventArgs args)
+    {
+        await _mapListener.SetProjection(new ProjectionSpecification()
+        {
+            Type = "globe"
+        });
+    }
+
+}

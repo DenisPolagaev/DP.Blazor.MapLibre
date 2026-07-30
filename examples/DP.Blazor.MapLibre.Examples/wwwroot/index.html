@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DP.Blazor.MapLibre.Examples</title>
+    <script>
+        // Dynamically set base href depending on whether it's localhost or deployed
+        const isLocalhost = window.location.hostname === "localhost";
+        const basePath = isLocalhost ? "/" : "/DP.Blazor.MapLibre/";
+        document.write(`<base href="${basePath}">`);
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="./css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="./css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="/DP.Blazor.MapLibre.Examples.styles.css" rel="stylesheet" />
+    <link href="./_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
+    <link href="./_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.css" rel="stylesheet" />
+    <script src="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js"></script>
+    <script src="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.js"></script>
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

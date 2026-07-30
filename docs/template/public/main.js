@@ -1,6 +1,6 @@
 function getSiteBasePath() {
     const isLocalhost = window.location.hostname === 'localhost';
-    return isLocalhost ? '/' : '/Blazor.MapLibre/';
+    return isLocalhost ? '/' : '/DP.Blazor.MapLibre/';
 }
 
 function absolutizePageRelativeLinks() {
@@ -79,16 +79,16 @@ export default {
         // Blazor and MapLibre resolve ./_content and ./_framework from the site root.
         ensureSiteBaseHref();
 
-        const mapLibreContent = '_content/Community.Blazor.MapLibre/';
+        const mapLibreContent = '_content/DP.Blazor.MapLibre/';
 
         appendStylesheet(`${mapLibreContent}maplibre-gl/dist/maplibre-gl.css`);
         appendStylesheet('_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.css');
-        appendStylesheet('Community.Blazor.MapLibre.Examples.styles.css');
+        appendStylesheet('DP.Blazor.MapLibre.Examples.styles.css');
         appendStylesheet('css/app.css');
 
         ensureBlazorHostElements();
 
-        appendScript('_content/Community.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js');
+        appendScript('_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js');
         appendScript('_framework/blazor.webassembly.js');
 
         scheduleLinkFixAfterDocFx();

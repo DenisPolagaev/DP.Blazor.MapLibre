@@ -2,19 +2,19 @@
 
 The **Frame rate plugin** adds a performance overlay that shows live and average FPS while the map is moving. It wraps [mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate) for MapLibre GL JS.
 
-The plugin project lives at `src/plugins/Community.Blazor.MapLibre.FrameratePlugin`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.FrameratePlugin`.
 
 ## Installation
 
 ```shell
-dotnet add reference ../../src/plugins/Community.Blazor.MapLibre.FrameratePlugin/Community.Blazor.MapLibre.FrameratePlugin.csproj
+dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj
 ```
 
 ## Register the plugin
 
 ```csharp
-@using Community.Blazor.MapLibre.FrameratePlugin
-@using Community.Blazor.MapLibre.Models.Control
+@using DP.Blazor.MapLibre.FrameratePlugin
+@using DP.Blazor.MapLibre.Models.Control
 
 <MapLibre @ref="_map" Options="_options" OnLoad="OnMapLoad" />
 

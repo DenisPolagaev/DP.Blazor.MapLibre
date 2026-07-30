@@ -1,0 +1,265 @@
+@page "/examples/map-compare"
+
+@using DP.Blazor.MapLibre.ComparePlugin
+@using DP.Blazor.MapLibre.Models
+@using DP.Blazor.MapLibre.Models.Layers
+@using DP.Blazor.MapLibre.Models.Sources
+@implements IAsyncDisposable
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/MapCompare.razor"/>
+
+<p class="text-muted">
+  Drag the slider to compare store locations in the Kansas City area — blue
+  <strong>Dollar Tree</strong> (left) vs red <strong>Family Dollar</strong> (right),
+  like the <a href="https://hopperrr.github.io/map_libre_compare/index.html" target="_blank" rel="noopener">maplibre-gl-compare demo</a>.
+</p>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@_errorMessage</div>
+}
+
+<div id="@_containerId" class="comparison-container rounded-top">
+    <MapLibre @ref="_beforeMap"
+              MapId="@_beforeMapId"
+              Options="_beforeMapOptions"
+              OnLoad="OnBeforeMapLoaded"
+              Class="map"
+              Height="100%"
+              Width="100%" />
+    <MapLibre @ref="_afterMap"
+              MapId="@_afterMapId"
+              Options="_afterMapOptions"
+              OnLoad="OnAfterMapLoaded"
+              Class="map"
+              Height="100%"
+              Width="100%" />
+</div>
+
+<div class="form-check mt-3">
+    <input class="form-check-input" type="checkbox" id="mousemoveCompare" @bind="_mouseMove" @bind:after="RecreateCompare" />
+    <label class="form-check-label" for="mousemoveCompare">
+        Move slider with mouse
+    </label>
+</div>
+
+@if (_compareCreated)
+{
+    <p class="mt-2 text-muted">Slider position: @_sliderPosition px</p>
+}
+
+<style>
+    .comparison-container {
+        position: relative;
+        height: 600px;
+        overflow: hidden;
+    }
+
+    .comparison-container .map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+    }
+
+    .comparison-container .maplibregl-compare {
+        z-index: 10;
+    }
+</style>
+
+@code {
+    [Inject] private IJSRuntime JsRuntime { get; set; } = null!;
+
+    private const string DollarTreeGeoJson = "/data/compare/dollar-tree.geojson";
+    private const string FamilyDollarGeoJson = "/data/compare/family-dollar.geojson";
+
+    private readonly string _containerId = "comparison-container";
+    private readonly string _beforeMapId = "before";
+    private readonly string _afterMapId = "after";
+
+    private MapLibre _beforeMap = new();
+    private MapLibre _afterMap = new();
+    private ComparePlugin _compare = new();
+    private Listener? _slideEndListener;
+    private bool _compareCreated;
+    private bool _attachStarted;
+    private int _mapsConfigured;
+    private bool _mouseMove;
+    private double _sliderPosition;
+    private string? _errorMessage;
+
+    private readonly MapOptions _beforeMapOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap,
+        Center = new LngLat(-94.58, 39.10),
+        Zoom = 10,
+    };
+
+    private readonly MapOptions _afterMapOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap,
+        Center = new LngLat(-94.58, 39.10),
+        Zoom = 10,
+    };
+
+    private static readonly LngLatBounds CompareBounds = new()
+    {
+        Southwest = new LngLat(-94.69, 39.03),
+        Northeast = new LngLat(-94.47, 39.18),
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _attachStarted || _compareCreated)
+        {
+            return;
+        }
+
+        _attachStarted = true;
+        await AttachCompareWhenReadyAsync();
+    }
+
+    private async Task OnBeforeMapLoaded(EventArgs _)
+    {
+        await _beforeMap.AddSource("stores", new GeoJsonSource { Data = DollarTreeGeoJson });
+        await _beforeMap.AddLayer(new CircleLayer
+        {
+            Id = "stores-layer",
+            Source = "stores",
+            Paint = new CircleLayerPaint
+            {
+                CircleColor = "#0074D9",
+                CircleRadius = 6,
+                CircleStrokeColor = "#ffffff",
+                CircleStrokeWidth = 1,
+            },
+        });
+
+        await _beforeMap.FitBounds(CompareBounds);
+        await NotifyMapConfiguredAsync();
+    }
+
+    private async Task OnAfterMapLoaded(EventArgs _)
+    {
+        await _afterMap.AddSource("stores", new GeoJsonSource { Data = FamilyDollarGeoJson });
+        await _afterMap.AddLayer(new CircleLayer
+        {
+            Id = "stores-layer",
+            Source = "stores",
+            Paint = new CircleLayerPaint
+            {
+                CircleColor = "#e74c3c",
+                CircleRadius = 6,
+                CircleStrokeColor = "#ffffff",
+                CircleStrokeWidth = 1,
+            },
+        });
+
+        await _afterMap.FitBounds(CompareBounds);
+        await NotifyMapConfiguredAsync();
+    }
+
+    private async Task NotifyMapConfiguredAsync()
+    {
+        if (Interlocked.Increment(ref _mapsConfigured) < 2)
+        {
+            return;
+        }
+
+        await AttachCompareWhenReadyAsync();
+    }
+
+    private async Task AttachCompareWhenReadyAsync()
+    {
+        if (_compareCreated)
+        {
+            return;
+        }
+
+        await _compare.InitializeAsync(JsRuntime);
+
+        for (var attempt = 0; attempt < 50 && !_compareCreated; attempt++)
+        {
+            if (_mapsConfigured < 2 || !await _compare.MapsReadyAsync(_beforeMapId, _afterMapId))
+            {
+                await Task.Delay(100);
+                continue;
+            }
+
+            try
+            {
+                _errorMessage = null;
+                await CreateCompareAsync();
+                return;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = ex.Message;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+
+        if (!_compareCreated)
+        {
+            _errorMessage = "Timed out waiting for both map instances.";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RecreateCompare()
+    {
+        if (!_compareCreated)
+        {
+            return;
+        }
+
+        await _compare.RemoveAsync();
+        _compareCreated = false;
+
+        try
+        {
+            _errorMessage = null;
+            await CreateCompareAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CreateCompareAsync()
+    {
+        await _compare.CreateAsync(
+            _beforeMapId,
+            _afterMapId,
+            $"#{_containerId}",
+            new CompareOptions(MouseMove: _mouseMove));
+
+        if (_slideEndListener is not null)
+        {
+            await _slideEndListener.DisposeAsync();
+        }
+        _slideEndListener = await _compare.AddSlideEndListener<SlideEndEvent>(OnSlideEnd);
+        _sliderPosition = await _compare.GetCurrentPositionAsync();
+        _compareCreated = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSlideEnd(SlideEndEvent slideEnd)
+    {
+        _sliderPosition = slideEnd.CurrentPosition;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_slideEndListener is not null)
+        {
+            await _slideEndListener.DisposeAsync();
+        }
+        await _compare.DisposeAsync();
+    }
+}

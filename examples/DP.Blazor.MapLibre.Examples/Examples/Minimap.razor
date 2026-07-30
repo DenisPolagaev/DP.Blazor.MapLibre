@@ -1,0 +1,84 @@
+@page "/examples/minimap"
+
+@using DP.Blazor.MapLibre.MinimapPlugin
+@using DP.Blazor.MapLibre.Models
+@using DP.Blazor.MapLibre.Models.Control
+@implements IAsyncDisposable
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/Minimap.razor"/>
+
+<p class="text-muted">
+  Overview minimap with a draggable viewport rectangle, adapted from
+  <a href="https://github.com/aesqe/mapboxgl-minimap" target="_blank" rel="noopener">mapboxgl-minimap</a>.
+  Pan the main map or drag the orange rectangle on the minimap.
+</p>
+
+<MapLibre @ref="_map"
+          Options="_mapOptions"
+          OnLoad="OnMapLoad"
+          Class="rounded-top"
+          Height="600px">
+</MapLibre>
+
+<div class="form-check mt-3">
+    <input class="form-check-input" type="checkbox" id="minimapToggle" checked="@_minimapVisible" @onchange="ToggleMinimapAsync" />
+    <label class="form-check-label" for="minimapToggle">Show minimap</label>
+</div>
+
+@code {
+    private MapLibre _map = new();
+    private MinimapPlugin _minimap = new();
+    private bool _minimapVisible = true;
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = ExampleMapStyles.OpenStreetMap,
+        Center = new LngLat(-73.99, 40.75),
+        Zoom = 11,
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _map.RegisterPlugin(_minimap);
+        }
+    }
+
+    private async Task OnMapLoad(EventArgs _)
+    {
+        await _minimap.AddMinimapControlAsync(new MinimapControlOptions
+        {
+            Style = ExampleMapStyles.OpenStreetMap,
+            Width = "220px",
+            Height = "140px",
+            LineColor = "#2563eb",
+            FillColor = "#f97316",
+            FillOpacity = 0.2,
+        }, ControlPosition.BottomRight);
+    }
+
+    private async Task ToggleMinimapAsync(ChangeEventArgs args)
+    {
+        _minimapVisible = args.Value is bool visible && visible;
+
+        if (_minimapVisible)
+        {
+            await _minimap.AddMinimapControlAsync(new MinimapControlOptions
+            {
+                Style = ExampleMapStyles.OpenStreetMap,
+                Width = "220px",
+                Height = "140px",
+                LineColor = "#2563eb",
+                FillColor = "#f97316",
+                FillOpacity = 0.2,
+            }, ControlPosition.BottomRight);
+        }
+        else
+        {
+            await _minimap.RemoveMinimapControlAsync();
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await _minimap.DisposeAsync();
+}

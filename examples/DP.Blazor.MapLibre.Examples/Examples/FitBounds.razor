@@ -1,0 +1,31 @@
+@page "/examples/fit-bounds"
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/FitBounds.razor"/>
+
+<MapLibre @ref="_mapListener"
+          Options="_mapOptions"
+          OnLoad="HandleMapLoadListener"
+          Class="rounded-top"
+          Height="600px">
+</MapLibre>
+
+@code {
+     private MapLibre _mapListener { get; set; } = new MapLibre();
+
+     private readonly MapOptions _mapOptions = new()
+     {
+          Style = ExampleMapStyles.OpenStreetMap
+     };
+
+     private async Task HandleMapLoadListener(EventArgs args)
+     {
+          var bounds = new LngLatBounds()
+          {
+               Southwest = new LngLat(17.124277, 48.154861),
+               Northeast = new LngLat(21.262986, 49.059367)
+          };
+
+          await _mapListener.FitBounds(bounds);
+     }
+
+}

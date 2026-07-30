@@ -1,9 +1,0 @@
-using System.Text.Json.Serialization;
-
-namespace Community.Blazor.MapLibre.Models.Event;
-
-public class MapTerrainEvent : MapEvent
-{
-    [JsonPropertyName("terrain")]
-    public object? Terrain { get; set; }
-}
