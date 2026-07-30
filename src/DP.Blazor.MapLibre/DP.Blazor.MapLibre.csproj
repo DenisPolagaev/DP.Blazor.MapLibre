@@ -9,6 +9,9 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <IsPackable>true</IsPackable>
 
+        <!-- wwwroot/maplibre-gl is committed; skip LibMan network restore in CI. -->
+        <LibraryManagerRestore Condition="'$(ContinuousIntegrationBuild)' == 'true'">false</LibraryManagerRestore>
+
         <!-- Generate XML documentation file -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>1591</NoWarn> <!-- Suppresses missing XML comment warnings -->

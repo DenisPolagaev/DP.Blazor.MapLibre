@@ -72,7 +72,7 @@ jobs:
             src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj
           do
-            dotnet build "$proj" --no-restore -c Release $VERSION_ARG
+            dotnet build "$proj" --no-restore -c Release /p:ContinuousIntegrationBuild=true $VERSION_ARG
           done
 
       - name: Build and run tests
