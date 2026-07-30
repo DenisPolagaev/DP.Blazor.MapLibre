@@ -549,7 +549,23 @@ export function once(container, eventType, dotnetReference, layerIds, throttleMs
  *
  * @throws {Error} Logs a warning if the specified control type is not supported.
  */
-export function addControl(container, controlType, position) {
+/**
+ * Adds a control to the map.
+ *
+ * @param {string} container - The identifier of the map container.
+ * @param {string} controlType - The type of control to add. Supported values are:
+ *                               "AttributionControl", "FullscreenControl", "GeolocateControl",
+ *                               "GlobeControl", "LogoControl", "NavigationControl", "ScaleControl",
+ *                               and "TerrainControl".
+ * @param {string} position - position on the map to which the control will be added. Valid values are 'top-left', 'top-right', 'bottom-left', and 'bottom-right'. Defaults to 'top-right'.
+ * @param {Object} [options] - Options passed to the control's own constructor (e.g. `{customAttribution}`
+ *                              for AttributionControl, `{showCompass, showZoom}` for NavigationControl).
+ * @returns {Object|null} The created control instance (usable with hasControl/removeControl), or null if
+ *                         the control type is not supported.
+ *
+ * @throws {Error} Logs a warning if the specified control type is not supported.
+ */
+export function addControl(container, controlType, position, options) {
     const map = mapInstances[container];
     const controlsMap = {
         AttributionControl: globalThis.maplibregl.AttributionControl,
@@ -564,11 +580,16 @@ export function addControl(container, controlType, position) {
 
     const ControlClass = controlsMap[controlType];
     if (ControlClass) {
-        const control = new ControlClass(position);
-        map.addControl(control);
-    } else {
-        console.warn(`Control type '${controlType}' is not supported.`);
+        // options belong to the control's own constructor (e.g. AttributionControl's
+        // customAttribution); position is a separate argument to map.addControl(), not part of the
+        // control's constructor at all.
+        const control = new ControlClass(options);
+        map.addControl(control, position);
+        return control;
     }
+
+    console.warn(`Control type '${controlType}' is not supported.`);
+    return null;
 }
 
 /**
@@ -1984,10 +2005,15 @@ export function loaded(container) {
  * @param {string} url - The URL for the image.
  * @returns {Promise<*>} A promise resolving when the image is loaded.
  */
+/**
+ * Loads an image from an external URL.
+ * @param {string} container - The map container.
+ * @param {string} url - The URL for the image.
+ * @returns {Promise<*>} The loaded image resource (usable directly with addImage/updateImage).
+ */
 export async function loadImage(container, url) {
     const map = mapInstances[container];
-    const data = await loadMapImageSource(map, url);
-    return { data };
+    return await loadMapImageSource(map, url);
 }
 
 /**
@@ -2977,7 +3003,7 @@ export async function executeTransaction(container, data) {
     for (const d of data) {
         switch (d.event) {
             case "addControl":
-                addControl(container, d.data[0], d.data[1]);
+                addControl(container, d.data[0], d.data[1], d.data[2]);
                 break;
             case "addGeolocateControl":
                 addGeolocateControl(container, d.data[0], d.data[1]);

@@ -4,7 +4,9 @@ The `MapLibre` component wraps MapLibre GL JS 5.17. Key methods added in recent 
 
 ## Style and terrain
 
-- `SetStyle(style, SetStyleOptions?)` — pass `{ Diff = true }` for incremental style updates (`style.load` fires); supports bulk transactions
+- `SetStyle(OneOf<JsonObject, string>, SetStyleOptions?)` — pass `{ Diff = true }` for incremental style updates (`style.load` fires); supports bulk transactions
+- `NativeMap` — raw `maplibregl.Map` JS handle for calling unwrapped MapLibre GL JS methods
+- `AddControl(type, position?, options?)` — returns control handle for `HasControl`/`RemoveControl`; `options` go to the control constructor
 - `GetStyleAsJsonElement()` — typed style read
 - `SetTerrain(TerrainSpecification?)`, `SetSky`, `SetLight`
 - `SetPaintProperty`, `SetLayoutProperty`, `SetGlobalStateProperty`
@@ -22,6 +24,7 @@ The `MapLibre` component wraps MapLibre GL JS 5.17. Key methods added in recent 
 
 ## Query
 
+- `QueryRenderedFeatures` / `QuerySourceFeatures` — return `IFeature[]`
 - `QueryRenderedLayerFeatures` — typed `LayerFeatureFeature[]` with `layer` metadata
 
 ## Layers
