@@ -77,7 +77,7 @@ jobs:
 
       - name: Build and run tests
         run: |
-          dotnet build tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-restore -c Release
+          dotnet build tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-restore -c Release /p:ContinuousIntegrationBuild=true
           dotnet test tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-build -c Release --verbosity normal
 
       - name: Pack NuGet packages
@@ -106,7 +106,7 @@ jobs:
 
       - name: Build documentation site
         if: github.ref == 'refs/heads/main'
-        run: dotnet build docs/DP.Blazor.MapLibre.Documentation.csproj -c Release -o blazor_build_output
+        run: dotnet build docs/DP.Blazor.MapLibre.Documentation.csproj -c Release -o blazor_build_output /p:ContinuousIntegrationBuild=true
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
