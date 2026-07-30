@@ -17,6 +17,12 @@ export default defineConfig({
     headless: true,
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
+    launchOptions: {
+      // Soften WebGL limits on Linux CI / chromium-headless-shell.
+      args: process.env.CI
+        ? ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist']
+        : [],
+    },
   },
   webServer: {
     command: 'npx --yes serve fixtures -l 4173',

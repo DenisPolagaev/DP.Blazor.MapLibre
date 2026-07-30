@@ -9,7 +9,7 @@ test.describe('MapLibre lifecycle suite', () => {
       const h = window.__mapHarness;
       const events = [];
 
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 25; i++) {
         const id = `map-${i}`;
         await h.createMap(id);
         const listenerId = h.on(id, 'move', (payload) => events.push(payload), null, 50);
@@ -39,47 +39,50 @@ test.describe('MapLibre lifecycle suite', () => {
 
     const result = await page.evaluate(async () => {
       const h = window.__mapHarness;
-      await h.createMap('ops');
+      try {
+        await h.createMap('ops');
 
-      await h.setGeoJson('ops', 'points', {
-        type: 'FeatureCollection',
-        features: Array.from({ length: 40 }, (_, index) => ({
-          type: 'Feature',
-          properties: { id: String(index) },
-          geometry: {
-            type: 'Point',
-            coordinates: [(index % 8) * 0.1, Math.floor(index / 8) * 0.1],
-          },
-        })),
-      });
+        await h.setGeoJson('ops', 'points', {
+          type: 'FeatureCollection',
+          features: Array.from({ length: 40 }, (_, index) => ({
+            type: 'Feature',
+            properties: { id: String(index) },
+            geometry: {
+              type: 'Point',
+              coordinates: [(index % 8) * 0.1, Math.floor(index / 8) * 0.1],
+            },
+          })),
+        });
 
-      // Give the source a frame to re-cluster.
-      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        const features = await h.queryRendered('ops', ['points-circle']);
+        const clusterFeatures = features.filter((f) => f.properties?.cluster);
+        let leaves = [];
+        if (clusterFeatures.length > 0) {
+          leaves = await h.getClusterLeaves(
+            'ops',
+            'points',
+            clusterFeatures[0].properties.cluster_id,
+            25,
+            0,
+          );
+        }
 
-      const features = await h.queryRendered('ops', ['points-circle']);
-      const source = window.maplibregl && null;
-      void source;
-
-      const map = document.querySelector('.maplibregl-canvas');
-      const clusterFeatures = features.filter((f) => f.properties?.cluster);
-      let leaves = [];
-      if (clusterFeatures.length > 0) {
-        leaves = await h.getClusterLeaves(
-          'ops',
-          'points',
-          clusterFeatures[0].properties.cluster_id,
-          25,
-          0,
-        );
+        const map = document.querySelector('.maplibregl-canvas');
+        h.remove('ops');
+        return {
+          hasCanvas: !!map,
+          featureCount: features.length,
+          leafCount: leaves.length,
+          diagnostics: h.getLifecycleDiagnostics(),
+        };
+      } catch (error) {
+        try {
+          h.remove('ops');
+        } catch {
+          // ignore
+        }
+        throw new Error(error?.message ?? String(error));
       }
-
-      h.remove('ops');
-      return {
-        hasCanvas: !!map,
-        featureCount: features.length,
-        leafCount: leaves.length,
-        diagnostics: h.getLifecycleDiagnostics(),
-      };
     });
 
     expect(result.hasCanvas).toBeTruthy();

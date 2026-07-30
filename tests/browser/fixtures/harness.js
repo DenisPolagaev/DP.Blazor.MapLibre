@@ -103,52 +103,80 @@ function getLifecycleDiagnostics() {
 }
 
 async function createMap(containerId) {
-  const map = new maplibregl.Map({
-    container: 'map',
-    style: {
-      version: 8,
-      sources: {
-        points: {
-          type: 'geojson',
-          data: {
-            type: 'FeatureCollection',
-            features: [
-              {
-                type: 'Feature',
-                properties: { id: '1' },
-                geometry: { type: 'Point', coordinates: [0, 0] },
-              },
-              {
-                type: 'Feature',
-                properties: { cluster_id: 9, point_count: 4 },
-                geometry: { type: 'Point', coordinates: [1, 1] },
-              },
-            ],
-          },
-          cluster: true,
-        },
-      },
-      layers: [
-        {
-          id: 'points-circle',
-          type: 'circle',
-          source: 'points',
-          paint: { 'circle-radius': 6, 'circle-color': '#088' },
-        },
-      ],
-    },
-    center: [0, 0],
-    zoom: 1,
-    attributionControl: false,
-  });
+  const host = document.getElementById('map');
+  if (!host) {
+    throw new Error('Harness container #map is missing.');
+  }
 
-  await map.once('load');
+  // Reuse a clean host: previous map.remove() should have emptied it, but CI headless
+  // can leave a half-initialized MapLibre root after WebGL pressure.
+  host.replaceChildren();
+
+  let map;
+  try {
+    map = new maplibregl.Map({
+      container: host,
+      style: {
+        version: 8,
+        sources: {
+          points: {
+            type: 'geojson',
+            data: {
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: { id: '1' },
+                  geometry: { type: 'Point', coordinates: [0, 0] },
+                },
+              ],
+            },
+            cluster: true,
+            clusterRadius: 50,
+            clusterMaxZoom: 14,
+          },
+        },
+        layers: [
+          {
+            id: 'points-circle',
+            type: 'circle',
+            source: 'points',
+            paint: { 'circle-radius': 6, 'circle-color': '#088' },
+          },
+        ],
+      },
+      center: [0, 0],
+      zoom: 1,
+      attributionControl: false,
+      failIfMajorPerformanceCaveat: false,
+    });
+  } catch (error) {
+    throw new Error(`createMap('${containerId}') constructor failed: ${error?.message ?? error}`);
+  }
+
+  try {
+    if (!map.loaded()) {
+      await map.once('load');
+    }
+  } catch (error) {
+    try {
+      map.remove();
+    } catch {
+      // ignore cleanup failures
+    }
+    throw new Error(`createMap('${containerId}') load failed: ${error?.message ?? error}`);
+  }
+
   mapInstances[containerId] = map;
   return map;
 }
 
 async function applyViewState(containerId, state) {
   const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`applyViewState: map '${containerId}' missing`);
+  }
+
   map.jumpTo({
     center: state.center,
     zoom: state.zoom,
@@ -159,15 +187,49 @@ async function applyViewState(containerId, state) {
 }
 
 async function setGeoJson(containerId, sourceId, data) {
-  mapInstances[containerId].getSource(sourceId).setData(data);
+  const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`setGeoJson: map '${containerId}' missing`);
+  }
+
+  const source = map.getSource(sourceId);
+  if (!source || typeof source.setData !== 'function') {
+    throw new Error(`setGeoJson: source '${sourceId}' missing or has no setData`);
+  }
+
+  source.setData(data);
+
+  // Wait until the source has been reprocessed / redrawn.
+  if (!map.isStyleLoaded() || map.areTilesLoaded?.() === false) {
+    await map.once('idle');
+  } else {
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+  }
 }
 
 async function queryRendered(containerId, layers) {
-  return mapInstances[containerId].queryRenderedFeatures({ layers });
+  const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`queryRendered: map '${containerId}' missing`);
+  }
+
+  return map.queryRenderedFeatures({ layers });
 }
 
 async function getClusterLeaves(containerId, sourceId, clusterId, limit = 10, offset = 0) {
-  const source = mapInstances[containerId].getSource(sourceId);
+  const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`getClusterLeaves: map '${containerId}' missing`);
+  }
+
+  const source = map.getSource(sourceId);
+  if (!source || typeof source.getClusterLeaves !== 'function') {
+    throw new Error(`Source '${sourceId}' does not support getClusterLeaves.`);
+  }
+
+  // MapLibre GL JS 5.x returns a Promise from getClusterLeaves(clusterId, limit, offset).
   return await source.getClusterLeaves(clusterId, limit, offset);
 }
 
