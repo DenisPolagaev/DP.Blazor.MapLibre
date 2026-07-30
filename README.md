@@ -67,7 +67,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Requires repository secret `NUGET_API_KEY`. Each packable project becomes its own `.nupkg` (core + every plugin).
+Requires repository secret `NUGET_USER` (nuget.org profile username, not email) and a Trusted Publishing policy on nuget.org pointing at this repo + `build-deploy-publish.yml`.
 
 You can also run the **Build, Test, and Publish** workflow manually (`workflow_dispatch`).
 
