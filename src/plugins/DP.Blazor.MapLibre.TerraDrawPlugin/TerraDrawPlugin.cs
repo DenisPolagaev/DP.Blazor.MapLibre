@@ -7,25 +7,42 @@ namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 /// <summary>
 /// MapLibre plugin wrapping <see href="https://github.com/watergis/maplibre-gl-terradraw">maplibre-gl-terradraw</see>.
 /// </summary>
-public sealed partial class TerraDrawPlugin : IMapLibrePlugin
+public sealed partial class TerraDrawPlugin : MapLibrePluginBase
 {
+    #region Fields
+
     private IJSObjectReference _mapObject = null!;
     private IJSObjectReference _pluginJsModule = null!;
     private readonly ConcurrentDictionary<string, DotNetObjectReference<CallbackHandler>> _references = new();
 
-    /// <summary>Whether <see cref="Initialize"/> completed successfully.</summary>
-    public bool IsInitialized { get; private set; }
+    #endregion
 
-    public async Task Initialize(IJSObjectReference map, IJSRuntime runtime)
+    #region Lifecycle Overrides
+
+    protected override async Task OnInitializeAsync(
+        IJSObjectReference map,
+        IJSRuntime runtime,
+        CancellationToken cancellationToken)
     {
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "./_content/TerraDrawPlugin/TerraDrawPlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
-        IsInitialized = true;
+            "import",
+            cancellationToken,
+            "./_content/TerraDrawPlugin/TerraDrawPlugin.js");
+        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
     }
 
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
+    {
+        if (_pluginJsModule is null || !IsAttached)
+        {
+            return;
+        }
+
+        await _pluginJsModule.InvokeVoidAsync("removeAllControls", cancellationToken);
+    }
+
+    protected override async ValueTask OnDisposeAsync()
     {
         foreach (var reference in _references.Values)
         {
@@ -34,17 +51,28 @@ public sealed partial class TerraDrawPlugin : IMapLibrePlugin
 
         _references.Clear();
 
+        var pluginModule = _pluginJsModule;
+        if (pluginModule is null)
+        {
+            _mapObject = null!;
+            return;
+        }
+
         try
         {
-            if (_pluginJsModule is not null)
-            {
-                await _pluginJsModule.InvokeVoidAsync("dispose");
-                await _pluginJsModule.DisposeAsync();
-            }
+            await pluginModule.InvokeVoidAsync("dispose");
+            await pluginModule.DisposeAsync();
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        finally
+        {
+            _pluginJsModule = null!;
+            _mapObject = null!;
+        }
     }
+
+    #endregion
+
+    #region Private Helpers
 
     private async Task<Listener> AddListenerAsync<T>(
         string method,
@@ -53,6 +81,8 @@ public sealed partial class TerraDrawPlugin : IMapLibrePlugin
         int? throttleTime = null,
         params object?[] extraArgs)
     {
+        EnsureInitialized();
+
         var callback = new CallbackHandler(
             _pluginJsModule,
             string.Empty,
@@ -79,4 +109,6 @@ public sealed partial class TerraDrawPlugin : IMapLibrePlugin
         _references.TryAdd(listenerId, reference);
         return new Listener(callback);
     }
+
+    #endregion
 }

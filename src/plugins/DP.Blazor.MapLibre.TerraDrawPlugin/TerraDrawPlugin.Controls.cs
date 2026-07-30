@@ -5,6 +5,8 @@ namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 
 public sealed partial class TerraDrawPlugin
 {
+    #region Public API
+
     public async ValueTask<string> AddDrawControlAsync(
         TerradrawControlOptions? options = null,
         ControlPosition position = ControlPosition.TopLeft,
@@ -35,11 +37,23 @@ public sealed partial class TerraDrawPlugin
     public async ValueTask<string> GetControlTypeAsync(string? controlId = null) =>
         await _pluginJsModule.InvokeAsync<string>("getControlType", controlId);
 
-    public async ValueTask RemoveControlAsync(string? controlId = null) =>
+    public async ValueTask RemoveControlAsync(string? controlId = null)
+    {
+        EnsureInitialized();
         await _pluginJsModule.InvokeVoidAsync("removeControl", controlId);
+        var remaining = await _pluginJsModule.InvokeAsync<string[]>("getControlIds");
+        if (remaining.Length == 0)
+        {
+            MarkDetached();
+        }
+    }
 
-    public async ValueTask RemoveAllControlsAsync() =>
+    public async ValueTask RemoveAllControlsAsync()
+    {
+        EnsureInitialized();
         await _pluginJsModule.InvokeVoidAsync("removeAllControls");
+        MarkDetached();
+    }
 
     public async ValueTask ActivateControlAsync(string? controlId = null) =>
         await _pluginJsModule.InvokeVoidAsync("activateControl", controlId);
@@ -71,17 +85,26 @@ public sealed partial class TerraDrawPlugin
         string? controlId = null) =>
         await _pluginJsModule.InvokeAsync<string>("cleanControlStyle", styleJson, options, controlId);
 
+    #endregion
+
+    #region Private Helpers
+
     private async ValueTask<string> AddControlInternalAsync(
         TerraDrawControlType controlType,
         object? options,
         ControlPosition position,
         string? controlId)
     {
-        return await _pluginJsModule.InvokeAsync<string>(
+        EnsureInitialized();
+        var id = await _pluginJsModule.InvokeAsync<string>(
             "addControl",
             controlType.ToControlName(),
             options,
             TerraDrawInteropExtensions.ToControlPosition(position),
             controlId);
+        MarkAttached();
+        return id;
     }
+
+    #endregion
 }

@@ -10,36 +10,27 @@ namespace DP.Blazor.MapLibre.FrameratePlugin;
 /// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AddFramerateControlAsync"/>
 /// after the map is ready (guard with <see cref="IsInitialized"/> if using <c>OnLoad</c>).
 /// </summary>
-public sealed class FrameratePlugin : IMapLibrePlugin
+public sealed class FrameratePlugin : MapLibrePluginBase
 {
+    #region Fields
+
     private IJSObjectReference? _mapObject;
     private IJSObjectReference? _pluginJsModule;
 
-    /// <summary>Whether <see cref="Initialize"/> completed successfully.</summary>
-    public bool IsInitialized => _pluginJsModule is not null;
+    #endregion
 
-    public async Task Initialize(IJSObjectReference map, IJSRuntime runtime)
-    {
-        ArgumentNullException.ThrowIfNull(map);
-        ArgumentNullException.ThrowIfNull(runtime);
-
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "./_content/FrameratePlugin/FrameratePlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
-    }
+    #region Public API
 
     /// <summary>
     /// Adds the frame rate control to the map.
     /// </summary>
-    /// <param name="options">Optional FPS graph configuration.</param>
-    /// <param name="position">Corner position on the map.</param>
     public async ValueTask AddFramerateControlAsync(
         FramerateControlOptions? options = null,
         ControlPosition position = ControlPosition.TopRight)
     {
         EnsureInitialized();
         await _pluginJsModule!.InvokeVoidAsync("addControl", options, position);
+        MarkAttached();
     }
 
     /// <summary>
@@ -47,32 +38,63 @@ public sealed class FrameratePlugin : IMapLibrePlugin
     /// </summary>
     public async ValueTask RemoveFramerateControlAsync()
     {
-        EnsureInitialized();
+        if (!IsInitialized || !IsAttached)
+        {
+            MarkDetached();
+            return;
+        }
+
         await _pluginJsModule!.InvokeVoidAsync("removeControl");
+        MarkDetached();
     }
 
-    public async ValueTask DisposeAsync()
+    #endregion
+
+    #region Lifecycle Overrides
+
+    protected override async Task OnInitializeAsync(
+        IJSObjectReference map,
+        IJSRuntime runtime,
+        CancellationToken cancellationToken)
     {
-        if (_pluginJsModule is null)
+        _mapObject = map;
+        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
+            "import",
+            cancellationToken,
+            "./_content/FrameratePlugin/FrameratePlugin.js");
+        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
+    }
+
+    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
+    {
+        if (_pluginJsModule is null || !IsAttached)
         {
+            return;
+        }
+
+        await _pluginJsModule.InvokeVoidAsync("removeControl", cancellationToken);
+    }
+
+    protected override async ValueTask OnDisposeAsync()
+    {
+        var pluginModule = _pluginJsModule;
+        if (pluginModule is null)
+        {
+            _mapObject = null;
             return;
         }
 
         try
         {
-            await _pluginJsModule.InvokeVoidAsync("dispose");
-            await _pluginJsModule.DisposeAsync();
+            await pluginModule.InvokeVoidAsync("dispose");
+            await pluginModule.DisposeAsync();
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        finally
+        {
+            _pluginJsModule = null;
+            _mapObject = null;
+        }
     }
 
-    private void EnsureInitialized()
-    {
-        if (!IsInitialized)
-        {
-            throw new InvalidOperationException(
-                "FrameratePlugin is not initialized. Call MapLibre.RegisterPlugin before using the plugin.");
-        }
-    }
+    #endregion
 }

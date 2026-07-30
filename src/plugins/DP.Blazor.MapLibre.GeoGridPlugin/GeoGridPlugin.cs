@@ -10,27 +10,24 @@ namespace DP.Blazor.MapLibre.GeoGridPlugin;
 /// from <c>OnLoad</c> or <c>OnStyleLoad</c> after the map is ready.
 /// Include <c>./_content/GeoGridPlugin/geogrid/geogrid.css</c> in your app for label positioning.
 /// </summary>
-public sealed class GeoGridPlugin : IMapLibrePlugin
+public sealed class GeoGridPlugin : MapLibrePluginBase
 {
+    #region Fields
+
     private IJSObjectReference? _mapObject;
     private IJSObjectReference? _pluginJsModule;
     private GeoGridOptions? _activeOptions;
 
+    #endregion
+
+    #region Properties
+
     /// <summary>Whether the grid is currently attached to the map.</summary>
-    public bool IsActive { get; private set; }
+    public bool IsActive => IsAttached;
 
-    /// <summary>Whether <see cref="Initialize"/> completed successfully.</summary>
-    public bool IsInitialized => _pluginJsModule is not null;
+    #endregion
 
-    public async Task Initialize(IJSObjectReference map, IJSRuntime runtime)
-    {
-        ArgumentNullException.ThrowIfNull(map);
-        ArgumentNullException.ThrowIfNull(runtime);
-
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "./_content/GeoGridPlugin/GeoGridPlugin.js");
-    }
+    #region Public API
 
     /// <summary>
     /// Adds the geographic grid to the map. Replaces any existing grid instance.
@@ -43,7 +40,7 @@ public sealed class GeoGridPlugin : IMapLibrePlugin
 
         _activeOptions = options;
         await _pluginJsModule!.InvokeVoidAsync("add", _mapObject, _activeOptions);
-        IsActive = true;
+        MarkAttached();
     }
 
     /// <summary>
@@ -51,14 +48,14 @@ public sealed class GeoGridPlugin : IMapLibrePlugin
     /// </summary>
     public async ValueTask RemoveGeoGridAsync()
     {
-        if (!IsInitialized || !IsActive)
+        if (!IsInitialized || !IsAttached)
         {
-            IsActive = false;
+            MarkDetached();
             return;
         }
 
         await _pluginJsModule!.InvokeVoidAsync("remove", _mapObject);
-        IsActive = false;
+        MarkDetached();
     }
 
     /// <summary>
@@ -77,11 +74,38 @@ public sealed class GeoGridPlugin : IMapLibrePlugin
         await AddGeoGridAsync(resolvedOptions);
     }
 
-    public async ValueTask DisposeAsync()
+    #endregion
+
+    #region Lifecycle Overrides
+
+    protected override async Task OnInitializeAsync(
+        IJSObjectReference map,
+        IJSRuntime runtime,
+        CancellationToken cancellationToken)
+    {
+        _mapObject = map;
+        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
+            "import",
+            cancellationToken,
+            "./_content/GeoGridPlugin/GeoGridPlugin.js");
+    }
+
+    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
+    {
+        if (_pluginJsModule is null || _mapObject is null || !IsAttached)
+        {
+            return;
+        }
+
+        await _pluginJsModule.InvokeVoidAsync("remove", cancellationToken, _mapObject);
+    }
+
+    protected override async ValueTask OnDisposeAsync()
     {
         var pluginModule = _pluginJsModule;
         if (pluginModule is null)
         {
+            _mapObject = null;
             return;
         }
 
@@ -94,23 +118,13 @@ public sealed class GeoGridPlugin : IMapLibrePlugin
 
             await pluginModule.DisposeAsync();
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-        catch (JSException) { }
         finally
         {
             _pluginJsModule = null;
             _mapObject = null;
-            IsActive = false;
+            _activeOptions = null;
         }
     }
 
-    private void EnsureInitialized()
-    {
-        if (!IsInitialized)
-        {
-            throw new InvalidOperationException(
-                "GeoGrid plugin is not initialized. Register it with the map before calling this method.");
-        }
-    }
+    #endregion
 }
