@@ -58,6 +58,22 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore DP.Blazor.MapLibre.slnx
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            src/DP.Blazor.MapLibre/ts/package-lock.json
+            tests/browser/package-lock.json
+
+      - name: TypeScript facade typecheck/build
+        working-directory: src/DP.Blazor.MapLibre/ts
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+
       - name: Build library and plugins
         run: |
           VERSION_ARG=""
@@ -79,6 +95,13 @@ jobs:
         run: |
           dotnet build tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-restore -c Release /p:ContinuousIntegrationBuild=true
           dotnet test tests/DP.Blazor.MapLibre.Tests/DP.Blazor.MapLibre.Tests.csproj --no-build -c Release --verbosity normal
+
+      - name: Playwright lifecycle suite
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
 
       - name: Pack NuGet packages
         if: steps.version.outputs.should_publish == 'true'

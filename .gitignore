@@ -8,6 +8,13 @@ riderModule.iml
 .idea/
 
 .npm-cache/
+node_modules/
+**/node_modules/
+**/ts/dist/
+**/ts/node_modules/
+**/tests/browser/node_modules/
+**/tests/browser/test-results/
+**/tests/browser/playwright-report/
 
 *.rsuser
 *.suo

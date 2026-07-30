@@ -11,7 +11,7 @@ public class LayerFeatureFeature : LayerFeature
 	public string? Id { get; set; }
 
 	[JsonPropertyName("geometry")]
-	public required IGeometry Geometry { get; set; }
+	public IGeometry? Geometry { get; set; }
 
 	[JsonPropertyName("properties")]
 	public Dictionary<string, object>? Properties { get; set; }
@@ -22,5 +22,11 @@ public class LayerFeatureFeature : LayerFeature
 	/// <summary>
 	/// <inheritdoc/>
 	/// </summary>
-	public override LngLatBounds GetBounds() => Geometry.GetBounds();
+	public override LngLatBounds GetBounds() =>
+		Geometry?.GetBounds()
+		?? new LngLatBounds
+		{
+			Southwest = new LngLat(0, 0),
+			Northeast = new LngLat(0, 0)
+		};
 }

@@ -44,9 +44,28 @@ Add MapLibre CSS (and JS if you load it from the package) in your app:
 <link href="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
 ```
 
-Targets: **.NET 8 / 9 / 10**.
+Targets: **.NET 8 / 9 / 10**. Bundled MapLibre GL JS: **5.17.0** only (`wwwroot/maplibre-gl`, restored via LibMan).
 
-## Usage
+## Typed interop facade
+
+TypeScript sources live under `src/DP.Blazor.MapLibre/ts`. Build with:
+
+```bash
+cd src/DP.Blazor.MapLibre/ts
+npm ci
+npm run build
+```
+
+This typechecks the `GeoportalMapHandle` facade and emits `wwwroot/js/geoportal-map-facade.js`.
+
+## Browser lifecycle tests
+
+```bash
+cd tests/browser
+npm ci
+npx playwright install chromium
+npm test
+```
 
 ```razor
 <MapLibre Options="_mapOptions" />

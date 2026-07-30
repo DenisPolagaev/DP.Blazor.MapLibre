@@ -12,7 +12,7 @@ public abstract class LayerFeature
 	// public required Layer Layer { get; init; }
 	
 	[JsonPropertyName("source")]
-	public required string Source { get; set; }
+	public string Source { get; set; } = string.Empty;
 	
 	[JsonPropertyName("state")]
 	public Dictionary<string,object> State { get; set; } = [];

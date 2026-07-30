@@ -386,11 +386,7 @@ export function getMap(container) {
  * Returns the zoom level at which the given cluster expands.
  */
 export async function getClusterExpansionZoom(container, sourceId, clusterId) {
-    const map = mapInstances[container];
-    if (!map) {
-        throw new Error(`Map instance '${container}' was not found.`);
-    }
-
+    const map = requireMap(container, 'getClusterExpansionZoom');
     const source = map.getSource(sourceId);
     if (!source || typeof source.getClusterExpansionZoom !== 'function') {
         throw new Error(`Source '${sourceId}' does not support clustering.`);
@@ -399,15 +395,47 @@ export async function getClusterExpansionZoom(container, sourceId, clusterId) {
     return await source.getClusterExpansionZoom(clusterId);
 }
 
+/**
+ * Returns leaf features contained by a cluster (GeoJSON source).
+ */
+export async function getClusterLeaves(container, sourceId, clusterId, limit = 10, offset = 0) {
+    const map = requireMap(container, 'getClusterLeaves');
+    const source = map.getSource(sourceId);
+    if (!source || typeof source.getClusterLeaves !== 'function') {
+        throw new Error(`Source '${sourceId}' does not support getClusterLeaves.`);
+    }
+
+    return await source.getClusterLeaves(clusterId, limit, offset);
+}
+
+/**
+ * Returns the immediate children of a cluster (GeoJSON source).
+ */
+export async function getClusterChildren(container, sourceId, clusterId) {
+    const map = requireMap(container, 'getClusterChildren');
+    const source = map.getSource(sourceId);
+    if (!source || typeof source.getClusterChildren !== 'function') {
+        throw new Error(`Source '${sourceId}' does not support getClusterChildren.`);
+    }
+
+    return await source.getClusterChildren(clusterId);
+}
+
 
 function createMapEventHandler(dotnetReference, throttleMs) {
     let lastInvoke = 0;
     let throttleTimer = null;
     let pendingEvent = null;
+    let cancelled = false;
 
-    return function (e) {
-        e.target = null;
-        const result = JSON.stringify(e);
+    const handler = function (e) {
+        if (cancelled) {
+            return;
+        }
+
+        // Never mutate MapLibre's event object — clone a compact DTO instead.
+        const dto = createCompactMapEventDto(e);
+        const result = JSON.stringify(dto);
 
         if (!throttleMs || throttleMs <= 0) {
             dotnetReference.invokeMethodAsync('Invoke', result).catch(console.error);
@@ -425,14 +453,80 @@ function createMapEventHandler(dotnetReference, throttleMs) {
         if (throttleTimer === null) {
             throttleTimer = setTimeout(() => {
                 throttleTimer = null;
-                if (pendingEvent !== null) {
-                    lastInvoke = Date.now();
-                    dotnetReference.invokeMethodAsync('Invoke', pendingEvent).catch(console.error);
+                if (cancelled || pendingEvent === null) {
                     pendingEvent = null;
+                    return;
                 }
+
+                lastInvoke = Date.now();
+                dotnetReference.invokeMethodAsync('Invoke', pendingEvent).catch(console.error);
+                pendingEvent = null;
             }, throttleMs - (now - lastInvoke));
         }
     };
+
+    handler.cancel = function cancel() {
+        cancelled = true;
+        pendingEvent = null;
+        if (throttleTimer !== null) {
+            clearTimeout(throttleTimer);
+            throttleTimer = null;
+        }
+    };
+
+    return handler;
+}
+
+/**
+ * Builds a compact, serializable event payload without mutating MapLibre's event.
+ * Geometry is omitted by default to keep the interop cold-path small.
+ */
+function createCompactMapEventDto(e, options) {
+    const includeGeometry = options?.includeGeometry === true;
+    const features = Array.isArray(e?.features)
+        ? e.features.map((feature) => ({
+            type: 'Feature',
+            id: feature?.id ?? null,
+            source: feature?.source ?? null,
+            sourceLayer: feature?.sourceLayer ?? null,
+            layer: feature?.layer?.id ? { id: feature.layer.id } : null,
+            layerId: feature?.layer?.id ?? null,
+            properties: feature?.properties ?? null,
+            // Keep a minimal Geometry placeholder so existing C# DTOs deserialize.
+            geometry: includeGeometry
+                ? (feature?.geometry ?? null)
+                : (feature?.geometry
+                    ? { type: feature.geometry.type, coordinates: [] }
+                    : { type: 'Point', coordinates: [0, 0] })
+        }))
+        : undefined;
+
+    return {
+        type: e?.type ?? null,
+        point: e?.point ? { x: e.point.x, y: e.point.y } : null,
+        lngLat: e?.lngLat ? { lng: e.lngLat.lng, lat: e.lngLat.lat } : null,
+        originalEvent: e?.originalEvent
+            ? {
+                type: e.originalEvent.type ?? null,
+                button: e.originalEvent.button ?? null,
+                ctrlKey: !!e.originalEvent.ctrlKey,
+                shiftKey: !!e.originalEvent.shiftKey,
+                altKey: !!e.originalEvent.altKey,
+                metaKey: !!e.originalEvent.metaKey
+            }
+            : null,
+        layerId: e?.features?.[0]?.layer?.id ?? null,
+        features
+    };
+}
+
+function requireMap(container, apiName) {
+    const map = mapInstances[container];
+    if (!map) {
+        throw new Error(`MapLibre.${apiName}: map instance '${container}' was not found. It may have been disposed.`);
+    }
+
+    return map;
 }
 
 function registerListener(container, eventType, handler, layerIds) {
@@ -467,7 +561,7 @@ function detachMapListener(map, entry) {
  * @returns {string} Listener id for use with off().
  */
 export function on(container, eventType, dotnetReference, layerIds, throttleMs) {
-    const map = mapInstances[container];
+    const map = requireMap(container, 'on');
     const handler = createMapEventHandler(dotnetReference, throttleMs);
     attachMapListener(map, eventType, handler, layerIds);
     return registerListener(container, eventType, handler, layerIds);
@@ -483,6 +577,10 @@ export function off(container, listenerId) {
     const entry = listenerRegistry[listenerId];
     if (!entry || entry.container !== container) {
         return;
+    }
+
+    if (typeof entry.handler?.cancel === 'function') {
+        entry.handler.cancel();
     }
 
     const map = mapInstances[container];
@@ -520,12 +618,15 @@ export function offAll(container, eventType) {
  * @returns {string} Listener id for use with off() before the event fires.
  */
 export function once(container, eventType, dotnetReference, layerIds, throttleMs) {
-    const map = mapInstances[container];
+    const map = requireMap(container, 'once');
     const listenerId = crypto.randomUUID();
     const baseHandler = createMapEventHandler(dotnetReference, throttleMs);
     const handler = function (e) {
         baseHandler(e);
         off(container, listenerId);
+    };
+    handler.cancel = function cancel() {
+        baseHandler.cancel();
     };
 
     if (layerIds === undefined || layerIds === null) {
@@ -1659,7 +1760,7 @@ export async function ensureImages(container, images) {
  * @returns {{ center: { lng: number, lat: number }, zoom: number, bearing: number, pitch: number }}
  */
 export function getViewState(container) {
-    const map = mapInstances[container];
+    const map = requireMap(container, 'getViewState');
     const center = map.getCenter();
     return {
         center: { lng: center.lng, lat: center.lat },
@@ -1667,6 +1768,30 @@ export function getViewState(container) {
         bearing: map.getBearing(),
         pitch: map.getPitch()
     };
+}
+
+/**
+ * Atomically applies center/zoom/bearing/pitch/padding.
+ * @param {string} container
+ * @param {{ center?: object, zoom?: number, bearing?: number, pitch?: number, padding?: object, animate?: boolean }} state
+ */
+export function applyViewState(container, state) {
+    const map = requireMap(container, 'applyViewState');
+    const options = state ?? {};
+    const camera = {
+        center: options.center,
+        zoom: options.zoom,
+        bearing: options.bearing,
+        pitch: options.pitch,
+        padding: options.padding
+    };
+
+    if (options.animate) {
+        map.easeTo(camera);
+        return;
+    }
+
+    map.jumpTo(camera);
 }
 
 /**
@@ -2144,19 +2269,12 @@ export function redraw(container) {
 
 /**
  * Cleans up internal resources associated with the map.
+ * Teardown is idempotent: safe to call multiple times for the same container.
  * @param {string} container - The map container.
  */
 export function remove(container) {
-    if (mapInstances[container]) {
-        mapInstances[container].remove();
-        delete mapInstances[container];
-    }
-    if (optionsInstances[container]) {
-        delete optionsInstances[container];
-    }
-    if (currentLocationMarkerInstances[container]) {
-        delete currentLocationMarkerInstances[container];
-    }
+    // Cancel throttle timers and drop DotNet callback closures before map.remove().
+    offAll(container);
 
     for (const [markerId, markerContainer] of Object.entries(markerContainers)) {
         if (markerContainer === container) {
@@ -2169,6 +2287,81 @@ export function remove(container) {
             removePopup(popupId);
         }
     }
+
+    if (mapInstances[container]) {
+        try {
+            mapInstances[container].remove();
+        } catch (error) {
+            console.warn(`MapLibre.remove: map.remove() failed for '${container}'.`, error);
+        }
+        delete mapInstances[container];
+    }
+
+    if (optionsInstances[container]) {
+        delete optionsInstances[container];
+    }
+
+    if (currentLocationMarkerInstances[container]) {
+        delete currentLocationMarkerInstances[container];
+    }
+}
+
+/**
+ * Dev diagnostics for lifecycle leaks (not used on the production hot path).
+ * @returns {{ maps: number, listeners: number, markers: number, popups: number }}
+ */
+export function getLifecycleDiagnostics() {
+    return {
+        maps: Object.keys(mapInstances).length,
+        listeners: Object.keys(listenerRegistry).length,
+        markers: Object.keys(markerInstances).length,
+        popups: Object.keys(popupInstances).length
+    };
+}
+
+/**
+ * Returns a lightweight typed handle facade over an existing map instance.
+ * Useful for JS-side Geoportal integrations and diagnostics.
+ * @param {string} container
+ */
+export function createGeoportalMapHandle(container) {
+    const map = requireMap(container, 'createGeoportalMapHandle');
+    const disposers = new Set();
+    let disposed = false;
+
+    return {
+        id: container,
+        native: map,
+        applyViewState(state) {
+            applyViewState(container, state);
+        },
+        getViewState() {
+            return getViewState(container);
+        },
+        setGeoJson(sourceId, data) {
+            const source = map.getSource(sourceId);
+            if (!source || typeof source.setData !== 'function') {
+                throw new Error(`Source '${sourceId}' is not a GeoJSON source.`);
+            }
+            source.setData(cutAntiMeridian(container, data));
+        },
+        async getClusterLeaves(sourceId, clusterId, limit = 10, offset = 0) {
+            return await getClusterLeaves(container, sourceId, clusterId, limit, offset);
+        },
+        async getClusterChildren(sourceId, clusterId) {
+            return await getClusterChildren(container, sourceId, clusterId);
+        },
+        dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            for (const dispose of [...disposers]) {
+                try { dispose(); } catch { /* ignore */ }
+            }
+            disposers.clear();
+        }
+    };
 }
 
 /**
@@ -2515,17 +2708,39 @@ export function timeControlIsFrozen() {
 
 /**
  * Updates the requestManager's transform request with a .NET callback.
+ * Prefer setJsTransformRequestPolicy for tile/glyph/sprite traffic — .NET
+ * callbacks on every resource request are a hot-path anti-pattern.
  * @param {string} container - The map container.
  * @param {Object|null} dotnetReference - .NET reference for the transform request callback, or null to clear.
  */
 export function setTransformRequest(container, dotnetReference) {
-    const map = mapInstances[container];
+    const map = requireMap(container, 'setTransformRequest');
     if (!dotnetReference) {
         map.setTransformRequest(null);
         return;
     }
 
     map.setTransformRequest(createTransformRequestFn(dotnetReference));
+}
+
+/**
+ * Sets a JS-only transformRequest policy (constant URL/header rewrite).
+ * Prefer this over SetTransformRequest for tile/glyph/sprite traffic so .NET
+ * is not invoked on the map hot path. Auth should use cookies or signed URLs.
+ * @param {string} container
+ * @param {function|null} policyFn - (url, resourceType) => RequestParameters | undefined
+ */
+export function setJsTransformRequestPolicy(container, policyFn) {
+    const map = requireMap(container, 'setJsTransformRequestPolicy');
+    if (!policyFn) {
+        map.setTransformRequest(null);
+        return;
+    }
+
+    map.setTransformRequest((url, resourceType) => {
+        const result = policyFn(url, resourceType);
+        return normalizeRequestParameters(result, url);
+    });
 }
 
 /**
@@ -3127,14 +3342,169 @@ export async function executeTransaction(container, data) {
     }
 }
 
+const INTERACTION_HANDLERS = {
+    dragPan: 'dragPan',
+    dragRotate: 'dragRotate',
+    scrollZoom: 'scrollZoom',
+    boxZoom: 'boxZoom',
+    doubleClickZoom: 'doubleClickZoom',
+    keyboard: 'keyboard',
+    touchZoomRotate: 'touchZoomRotate',
+    touchPitch: 'touchPitch',
+    cooperativeGestures: 'cooperativeGestures'
+};
+
+function resolveInteractionHandler(map, handlerName, apiName) {
+    const key = INTERACTION_HANDLERS[handlerName] ?? handlerName;
+    const handler = map[key];
+    if (!handler || typeof handler.enable !== 'function' || typeof handler.disable !== 'function') {
+        throw new Error(`MapLibre.${apiName}: interaction handler '${handlerName}' was not found.`);
+    }
+
+    return handler;
+}
+
+/**
+ * Enables or disables a MapLibre interaction handler.
+ * @param {string} container
+ * @param {string} handlerName - dragPan|dragRotate|scrollZoom|boxZoom|doubleClickZoom|keyboard|touchZoomRotate|touchPitch|cooperativeGestures
+ * @param {boolean} enabled
+ */
+export function setInteractionHandlerEnabled(container, handlerName, enabled) {
+    const map = requireMap(container, 'setInteractionHandlerEnabled');
+    const handler = resolveInteractionHandler(map, handlerName, 'setInteractionHandlerEnabled');
+    if (enabled) {
+        handler.enable();
+    } else {
+        handler.disable();
+    }
+}
+
+/**
+ * Returns whether the given interaction handler is enabled.
+ * @param {string} container
+ * @param {string} handlerName
+ * @returns {boolean}
+ */
+export function isInteractionHandlerEnabled(container, handlerName) {
+    const map = requireMap(container, 'isInteractionHandlerEnabled');
+    const handler = resolveInteractionHandler(map, handlerName, 'isInteractionHandlerEnabled');
+    return typeof handler.isEnabled === 'function' ? !!handler.isEnabled() : true;
+}
+
+/**
+ * Snapshot of all standard interaction handlers.
+ * @param {string} container
+ */
+export function getInteractionHandlersState(container) {
+    const map = requireMap(container, 'getInteractionHandlersState');
+    const state = {};
+    for (const name of Object.keys(INTERACTION_HANDLERS)) {
+        const handler = map[INTERACTION_HANDLERS[name]];
+        state[name] = typeof handler?.isEnabled === 'function' ? !!handler.isEnabled() : false;
+    }
+    return state;
+}
+
+/**
+ * Enables or disables cooperative gestures (boolean MapLibre option).
+ * @param {string} container
+ * @param {boolean} enabled
+ */
+export function setCooperativeGestures(container, enabled) {
+    setInteractionHandlerEnabled(container, 'cooperativeGestures', enabled);
+}
+
+/**
+ * @param {string} container
+ * @returns {boolean}
+ */
+export function isCooperativeGesturesEnabled(container) {
+    return isInteractionHandlerEnabled(container, 'cooperativeGestures');
+}
+
+function requireSourceWithMethod(container, sourceId, methodName, apiName) {
+    const map = requireMap(container, apiName);
+    const source = map.getSource(sourceId);
+    if (!source) {
+        throw new Error(`MapLibre.${apiName}: source '${sourceId}' was not found.`);
+    }
+
+    if (typeof source[methodName] !== 'function') {
+        throw new Error(`MapLibre.${apiName}: source '${sourceId}' does not support ${methodName}().`);
+    }
+
+    return source;
+}
+
+/**
+ * Updates ImageSource URL and optional coordinates.
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {{ url: string, coordinates?: number[][] }} options
+ */
+export function updateImageSource(container, sourceId, options) {
+    const source = requireSourceWithMethod(container, sourceId, 'updateImage', 'updateImageSource');
+    source.updateImage(options);
+}
+
+/**
+ * Sets corner coordinates for image/video/canvas sources.
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {number[][]} coordinates
+ */
+export function setSourceCoordinates(container, sourceId, coordinates) {
+    const source = requireSourceWithMethod(container, sourceId, 'setCoordinates', 'setSourceCoordinates');
+    source.setCoordinates(coordinates);
+}
+
+/**
+ * Returns the HTMLVideoElement for a video source.
+ * @param {string} container
+ * @param {string} sourceId
+ */
+export function getVideoSourceElement(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'getVideo', 'getVideoSourceElement');
+    return source.getVideo();
+}
+
+/**
+ * Starts CanvasSource animation frames.
+ */
+export function playCanvasSource(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'play', 'playCanvasSource');
+    source.play();
+}
+
+/**
+ * Pauses CanvasSource animation frames.
+ */
+export function pauseCanvasSource(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'pause', 'pauseCanvasSource');
+    source.pause();
+}
+
+/**
+ * Updates GeoJSON clustering options without recreating the source.
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {object} options
+ */
+export function setClusterOptions(container, sourceId, options) {
+    const source = requireSourceWithMethod(container, sourceId, 'setClusterOptions', 'setClusterOptions');
+    source.setClusterOptions(options ?? {});
+}
+
 /**
  * Disables all rotation functionality
  * @param {string} container - The map container.
  */
 export function disableRotation(container) {
-    mapInstances[container].dragRotate.disable();
-    mapInstances[container].touchZoomRotate.disableRotation();
-    mapInstances[container].keyboard.disableRotation();
+    const map = requireMap(container, 'disableRotation');
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
 }
 
 /**

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using DP.Blazor.MapLibre.Models.Padding;
 
 namespace DP.Blazor.MapLibre.Models;
 
@@ -18,4 +19,8 @@ public sealed class MapViewState
 
     [JsonPropertyName("pitch")]
     public double Pitch { get; set; }
+
+    [JsonPropertyName("padding")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PaddingOptions? Padding { get; set; }
 }

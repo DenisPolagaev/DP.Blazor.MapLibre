@@ -1,0 +1,15 @@
+{
+  "name": "dp-blazor-maplibre-facade",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && node ./scripts/bundle.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.5",
+    "maplibre-gl": "5.17.0",
+    "typescript": "^5.8.3"
+  }
+}

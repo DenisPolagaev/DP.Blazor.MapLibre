@@ -77,6 +77,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, MapPopup> _popups = new();
 
     private string? _mapContainerId;
+    private bool _disposed;
 
     /// <summary>
     /// JavaScript interop container key (set during initialization).
@@ -224,16 +225,27 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             // Load the plugins after the map has been initialized
             foreach (var plugin in _plugins)
             {
-                await plugin.Initialize(_mapObject, JsRuntime);
+                await InitializeRegisteredPluginAsync(plugin);
             }
 
             _mapInitialized = true;
         }
     }
 
-    public async Task RegisterPlugin(IMapLibrePlugin plugin)
+    /// <summary>
+    /// Registers a plugin with this map. The map owns disposal of plugins registered through
+    /// this method; the application must not dispose them again after map teardown.
+    /// </summary>
+    public Task RegisterPlugin(IMapLibrePlugin plugin) =>
+        RegisterPluginAsync(plugin);
+
+    /// <summary>
+    /// Registers a plugin with this map. Prefer this over <see cref="RegisterPlugin"/> when
+    /// flowing a <see cref="CancellationToken"/>. Ownership rules are identical.
+    /// </summary>
+    public async Task RegisterPluginAsync(IMapLibrePlugin plugin, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(plugin, nameof(plugin));
+        ArgumentNullException.ThrowIfNull(plugin);
 
         if (_plugins.Contains(plugin))
         {
@@ -242,9 +254,57 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
         _plugins.Add(plugin);
 
-        if (_mapInitialized)
+        if (!_mapInitialized)
         {
-            await plugin.Initialize(_mapObject, JsRuntime);
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await InitializeRegisteredPluginAsync(plugin, cancellationToken);
+    }
+
+    /// <summary>
+    /// Detaches and optionally disposes a previously registered plugin, then removes it from the registry.
+    /// </summary>
+    /// <param name="plugin">Plugin instance previously passed to <see cref="RegisterPlugin"/>.</param>
+    /// <param name="dispose">When true (default), the map disposes the plugin after detach.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task UnregisterPluginAsync(
+        IMapLibrePlugin plugin,
+        bool dispose = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plugin);
+
+        if (!_plugins.Remove(plugin))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (plugin is IMapLibrePluginLifecycle lifecycle)
+        {
+            await lifecycle.DetachAsync(cancellationToken);
+        }
+
+        if (!dispose)
+        {
+            return;
+        }
+
+        try
+        {
+            await plugin.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 
@@ -262,20 +322,105 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
         foreach (var listener in _listeners.Values)
         {
-            await listener.RemoveAsync();
+            try
+            {
+                await listener.RemoveAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (JSException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
         }
 
         _listeners.Clear();
+
+        foreach (var plugin in _plugins.ToArray())
+        {
+            try
+            {
+                if (plugin is IMapLibrePluginLifecycle lifecycle)
+                {
+                    await lifecycle.DetachAsync();
+                }
+
+                await plugin.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (JSException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        _plugins.Clear();
+
+        foreach (var marker in _markers.Values)
+        {
+            try
+            {
+                await marker.RemoveAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (JSException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        _markers.Clear();
+
+        foreach (var popup in _popups.Values)
+        {
+            try
+            {
+                await popup.RemoveAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (JSException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        _popups.Clear();
 
         foreach (var value in _customLayerHandlers.Values)
         {
             value.Dispose();
         }
 
+        _customLayerHandlers.Clear();
+
         _transformConstrainReference?.Dispose();
+        _transformConstrainReference = null;
         _transformRequestReference?.Dispose();
+        _transformRequestReference = null;
 
         try
         {
@@ -295,6 +440,23 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         {
             // JS module may already be disposed when parent and child both participate in teardown.
         }
+
+        _dotNetObjectReference?.Dispose();
+        _dotNetObjectReference = null!;
+        _mapInitialized = false;
+    }
+
+    private async Task InitializeRegisteredPluginAsync(
+        IMapLibrePlugin plugin,
+        CancellationToken cancellationToken = default)
+    {
+        if (plugin is IMapLibrePluginLifecycle lifecycle)
+        {
+            await lifecycle.InitializeAsync(_mapObject, JsRuntime, cancellationToken);
+            return;
+        }
+
+        await plugin.Initialize(_mapObject, JsRuntime);
     }
 
     #endregion
@@ -1279,6 +1441,23 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeAsync<MapViewState>("getViewState", JsContainerId);
 
     /// <summary>
+    /// Atomically applies center, zoom, bearing, pitch, and optional padding.
+    /// </summary>
+    public async ValueTask ApplyViewStateAsync(MapViewState state, bool animate = false)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        await _jsModule.InvokeVoidAsync("applyViewState", JsContainerId, new
+        {
+            center = state.Center,
+            zoom = state.Zoom,
+            bearing = state.Bearing,
+            pitch = state.Pitch,
+            padding = state.Padding,
+            animate
+        });
+    }
+
+    /// <summary>
     /// Returns the value of centerClampedToGround.
     /// If true, the elevation of the center point will automatically be set to the terrain elevation (or zero if
     /// terrain is not enabled). If false, the elevation of the center point will default to sea level and will not
@@ -1615,6 +1794,11 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// to override. Optional fields such as <c>credentials</c> must be omitted when unused.
     /// Pass <c>null</c> to clear the callback.
     /// </summary>
+    /// <remarks>
+    /// Prefer cookies, signed URLs, or <c>setJsTransformRequestPolicy</c> for tile traffic.
+    /// A synchronous .NET callback on every tile/glyph/sprite request is a hot-path anti-pattern
+    /// and must only be used for constant URL/header policies when a JS-only policy is unavailable.
+    /// </remarks>
     public async ValueTask SetTransformRequest(Func<TransformRequestInput, TransformRequestResult>? handler)
     {
         _transformRequestReference?.Dispose();
@@ -1687,6 +1871,32 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public async ValueTask<double> GetClusterExpansionZoom(string sourceId, int clusterId) =>
         await _jsModule.InvokeAsync<double>(
             "getClusterExpansionZoom",
+            JsContainerId,
+            sourceId,
+            clusterId);
+
+    /// <summary>
+    /// Returns leaf features contained by a cluster in a GeoJSON source.
+    /// </summary>
+    public async ValueTask<JsonElement> GetClusterLeaves(
+        string sourceId,
+        int clusterId,
+        int limit = 10,
+        int offset = 0) =>
+        await _jsModule.InvokeAsync<JsonElement>(
+            "getClusterLeaves",
+            JsContainerId,
+            sourceId,
+            clusterId,
+            limit,
+            offset);
+
+    /// <summary>
+    /// Returns the immediate children of a cluster in a GeoJSON source.
+    /// </summary>
+    public async ValueTask<JsonElement> GetClusterChildren(string sourceId, int clusterId) =>
+        await _jsModule.InvokeAsync<JsonElement>(
+            "getClusterChildren",
             JsContainerId,
             sourceId,
             clusterId);
@@ -2599,6 +2809,100 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Enables or disables a MapLibre interaction handler.
+    /// </summary>
+    public ValueTask SetInteractionHandlerEnabledAsync(MapInteractionHandler handler, bool enabled) =>
+        _jsModule.InvokeVoidAsync(
+            "setInteractionHandlerEnabled",
+            JsContainerId,
+            ToHandlerName(handler),
+            enabled);
+
+    /// <summary>
+    /// Returns whether the given interaction handler is enabled.
+    /// </summary>
+    public ValueTask<bool> IsInteractionHandlerEnabledAsync(MapInteractionHandler handler) =>
+        _jsModule.InvokeAsync<bool>(
+            "isInteractionHandlerEnabled",
+            JsContainerId,
+            ToHandlerName(handler));
+
+    /// <summary>
+    /// Returns enablement state for all standard interaction handlers.
+    /// </summary>
+    public ValueTask<MapInteractionHandlersState> GetInteractionHandlersStateAsync() =>
+        _jsModule.InvokeAsync<MapInteractionHandlersState>("getInteractionHandlersState", JsContainerId);
+
+    /// <summary>
+    /// Enables or disables cooperative gestures (Ctrl/Cmd + scroll on desktop, two-finger pan on mobile).
+    /// </summary>
+    public ValueTask SetCooperativeGesturesAsync(bool enabled) =>
+        _jsModule.InvokeVoidAsync("setCooperativeGestures", JsContainerId, enabled);
+
+    /// <summary>
+    /// Returns whether cooperative gestures are currently enabled.
+    /// </summary>
+    public ValueTask<bool> IsCooperativeGesturesEnabledAsync() =>
+        _jsModule.InvokeAsync<bool>("isCooperativeGesturesEnabled", JsContainerId);
+
+    /// <summary>
+    /// Updates an <c>image</c> source URL and optional coordinates.
+    /// </summary>
+    public ValueTask UpdateImageSourceAsync(string sourceId, UpdateImageSourceOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(options);
+        return _jsModule.InvokeVoidAsync("updateImageSource", JsContainerId, sourceId, options);
+    }
+
+    /// <summary>
+    /// Sets corner coordinates for an image, video, or canvas source (TL, TR, BR, BL).
+    /// </summary>
+    public ValueTask SetSourceCoordinatesAsync(string sourceId, IReadOnlyList<IReadOnlyList<double>> coordinates)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(coordinates);
+        return _jsModule.InvokeVoidAsync("setSourceCoordinates", JsContainerId, sourceId, coordinates);
+    }
+
+    /// <summary>
+    /// Returns the HTML video element for a video source.
+    /// </summary>
+    public ValueTask<IJSObjectReference> GetVideoSourceElementAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeAsync<IJSObjectReference>("getVideoSourceElement", JsContainerId, sourceId);
+    }
+
+    /// <summary>
+    /// Starts copying frames from a canvas source each animation frame.
+    /// </summary>
+    public ValueTask PlayCanvasSourceAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeVoidAsync("playCanvasSource", JsContainerId, sourceId);
+    }
+
+    /// <summary>
+    /// Pauses canvas source animation (map keeps the last copied frame).
+    /// </summary>
+    public ValueTask PauseCanvasSourceAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeVoidAsync("pauseCanvasSource", JsContainerId, sourceId);
+    }
+
+    /// <summary>
+    /// Updates GeoJSON clustering options without recreating the source.
+    /// </summary>
+    public ValueTask SetClusterOptionsAsync(string sourceId, SetClusterOptions options)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(options);
+        return _jsModule.InvokeVoidAsync("setClusterOptions", JsContainerId, sourceId, options);
+    }
+
+    /// <summary>
     /// Disables double-click/double-tap zoom and tap-then-drag-vertical zoom.
     /// Use while editing geometries with terra-draw so those gestures do not
     /// conflict with vertex dragging. Pinch and scroll-wheel zoom remain enabled.
@@ -2615,6 +2919,21 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     {
         await _jsModule.InvokeVoidAsync("enableMapZoomGestures", JsContainerId);
     }
+
+    private static string ToHandlerName(MapInteractionHandler handler) =>
+        handler switch
+        {
+            MapInteractionHandler.DragPan => "dragPan",
+            MapInteractionHandler.DragRotate => "dragRotate",
+            MapInteractionHandler.ScrollZoom => "scrollZoom",
+            MapInteractionHandler.BoxZoom => "boxZoom",
+            MapInteractionHandler.DoubleClickZoom => "doubleClickZoom",
+            MapInteractionHandler.Keyboard => "keyboard",
+            MapInteractionHandler.TouchZoomRotate => "touchZoomRotate",
+            MapInteractionHandler.TouchPitch => "touchPitch",
+            MapInteractionHandler.CooperativeGestures => "cooperativeGestures",
+            _ => throw new ArgumentOutOfRangeException(nameof(handler), handler, null)
+        };
 
     #endregion
 
