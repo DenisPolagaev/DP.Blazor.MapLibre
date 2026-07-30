@@ -8,7 +8,7 @@ namespace DP.Blazor.MapLibre.GeoGridPlugin;
 /// (<see href="https://github.com/falseinput/geogrid-maplibre-gl">geogrid-maplibre-gl</see>).
 /// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AddGeoGridAsync"/>
 /// from <c>OnLoad</c> or <c>OnStyleLoad</c> after the map is ready.
-/// Include <c>/_content/GeoGridPlugin/geogrid/geogrid.css</c> in your app for label positioning.
+/// Include <c>./_content/GeoGridPlugin/geogrid/geogrid.css</c> in your app for label positioning.
 /// </summary>
 public sealed class GeoGridPlugin : IMapLibrePlugin
 {

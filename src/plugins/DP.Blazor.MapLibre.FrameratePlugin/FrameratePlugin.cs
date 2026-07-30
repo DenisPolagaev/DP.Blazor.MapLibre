@@ -17,7 +17,7 @@ public sealed class FrameratePlugin : IMapLibrePlugin
     {
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "/_content/FrameratePlugin/FrameratePlugin.js");
+            "import", "./_content/FrameratePlugin/FrameratePlugin.js");
         await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
     }
 

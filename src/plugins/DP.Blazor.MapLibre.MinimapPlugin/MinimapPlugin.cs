@@ -18,7 +18,7 @@ public sealed class MinimapPlugin : IMapLibrePlugin
     {
         _mapObject = map;
         _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import", "/_content/MinimapPlugin/MinimapPlugin.js");
+            "import", "./_content/MinimapPlugin/MinimapPlugin.js");
         await _pluginJsModule.InvokeVoidAsync("initialize", _mapObject);
     }
 

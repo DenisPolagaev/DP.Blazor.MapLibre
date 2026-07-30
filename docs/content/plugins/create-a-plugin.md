@@ -90,7 +90,7 @@ map method.
         {
             PluginDotNetReference = DotNetObjectReference.Create(this);
             PluginJsModule = await runtime
-                .InvokeAsync<IJSObjectReference>("import", "/_content/MyMapLibreRotationPlugin/MyMapLibreRotationPlugin.js");
+                .InvokeAsync<IJSObjectReference>("import", "./_content/MyMapLibreRotationPlugin/MyMapLibreRotationPlugin.js");
             
             await PluginJsModule.InvokeVoidAsync("initialize", map, PluginDotNetReference);
         }
@@ -113,7 +113,7 @@ map method.
     }
     ```
 
-   - Since the JavaScript module is being loaded from a Razor Class Library, the base path of the module should be `/_content/{NAMESPACE}/{MODULE_FILE_NAME}.js`.
+   - Since the JavaScript module is being loaded from a Razor Class Library, use a base-relative path `./_content/{NAMESPACE}/{MODULE_FILE_NAME}.js` (works with `<base href>` on GitHub Pages and similar hosts).
    - The plugin is not responsible for disposing the `MapObject` since a that reference was provided to it by the core `MapLibre` component during initialization.
 
 5. Add a reference to your plugin **Razor Class Library** project.

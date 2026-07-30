@@ -1,5 +1,9 @@
-const scriptBase = '/_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/';
-const stylesheetHref = '/_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css';
+function contentUrl(relativePath) {
+    return new URL(relativePath, document.baseURI).href;
+}
+
+const scriptBase = contentUrl('_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/');
+const stylesheetHref = contentUrl('_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css');
 
 let mapObject;
 let dependenciesLoaded = false;

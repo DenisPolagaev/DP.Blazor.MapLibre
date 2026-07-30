@@ -64,11 +64,11 @@ public class MapboxGlDrawPlugin : IMapLibrePlugin
         PluginDotNetReference = DotNetObjectReference.Create(this);
         
         // Import the JavaScript module for the Mapbox GL Draw plugin
-        PluginJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "/_content/MapboxGlDrawPlugin/MapboxGlDrawPlugin.js");
+        PluginJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "./_content/MapboxGlDrawPlugin/MapboxGlDrawPlugin.js");
         
         // Import dependencies for the plugin
-        MapboxJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "/_content/MapboxGlDrawPlugin/mapbox-gl-draw.js");
-        TurfJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "/_content/MapboxGlDrawPlugin/turf.min.js");
+        MapboxJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "./_content/MapboxGlDrawPlugin/mapbox-gl-draw.js");
+        TurfJsModule = await runtime.InvokeAsync<IJSObjectReference>("import", "./_content/MapboxGlDrawPlugin/turf.min.js");
         
         await PluginJsModule.InvokeVoidAsync("initialize", MapObject, PluginDotNetReference);
     }
