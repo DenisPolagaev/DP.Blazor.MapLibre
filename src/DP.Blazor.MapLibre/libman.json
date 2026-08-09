@@ -7,6 +7,7 @@
       "destination": "wwwroot/maplibre-gl",
       "files": [
         "dist/maplibre-gl.mjs",
+        "dist/maplibre-gl-shared.mjs",
         "dist/maplibre-gl-worker.mjs",
         "dist/maplibre-gl.css"
       ]
