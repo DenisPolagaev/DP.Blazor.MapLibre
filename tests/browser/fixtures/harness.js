@@ -197,7 +197,8 @@ async function setGeoJson(containerId, sourceId, data) {
     throw new Error(`setGeoJson: source '${sourceId}' missing or has no setData`);
   }
 
-  source.setData(data);
+  // MapLibre GL JS 6.x: setData returns a Promise — await it like MapLibre.razor.js.
+  await Promise.resolve(source.setData(data));
 
   // Wait until the source has been reprocessed / redrawn.
   if (!map.isStyleLoaded() || map.areTilesLoaded?.() === false) {
@@ -229,8 +230,104 @@ async function getClusterLeaves(containerId, sourceId, clusterId, limit = 10, of
     throw new Error(`Source '${sourceId}' does not support getClusterLeaves.`);
   }
 
-  // MapLibre GL JS 5.x returns a Promise from getClusterLeaves(clusterId, limit, offset).
+  // MapLibre GL JS 6.x returns a Promise from getClusterLeaves(clusterId, limit, offset).
   return await source.getClusterLeaves(clusterId, limit, offset);
+}
+
+async function getClusterOptions(containerId, sourceId) {
+  const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`getClusterOptions: map '${containerId}' missing`);
+  }
+  const source = map.getSource(sourceId);
+  if (!source || typeof source.getClusterOptions !== 'function') {
+    throw new Error(`Source '${sourceId}' does not support getClusterOptions.`);
+  }
+  return source.getClusterOptions();
+}
+
+async function getGeoJsonBounds(containerId, sourceId) {
+  const map = mapInstances[containerId];
+  if (!map) {
+    throw new Error(`getGeoJsonBounds: map '${containerId}' missing`);
+  }
+  const source = map.getSource(sourceId);
+  if (!source || typeof source.getBounds !== 'function') {
+    throw new Error(`Source '${sourceId}' does not support getBounds.`);
+  }
+  const bounds = await source.getBounds();
+  if (!bounds) {
+    return null;
+  }
+  // Mirror MapLibre.razor.js getGeoJsonBounds payload for C# LngLatBounds.
+  if (typeof bounds.getSouthWest === 'function' && typeof bounds.getNorthEast === 'function') {
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    return {
+      _sw: { lng: sw.lng, lat: sw.lat },
+      _ne: { lng: ne.lng, lat: ne.lat },
+    };
+  }
+  return {
+    _sw: { lng: bounds._sw.lng, lat: bounds._sw.lat },
+    _ne: { lng: bounds._ne.lng, lat: bounds._ne.lat },
+  };
+}
+
+/**
+ * Compact event DTO — keep in sync with MapLibre.razor.js createCompactMapEventDto
+ * and C# MapDataEvent / MapMouseEvent models.
+ */
+function createCompactMapEventDto(e, options) {
+  const includeGeometry = options?.includeGeometry === true;
+  const features = Array.isArray(e?.features)
+    ? e.features.map((feature) => ({
+        type: 'Feature',
+        id: feature?.id ?? null,
+        source: feature?.source ?? null,
+        sourceLayer: feature?.sourceLayer ?? null,
+        layer: feature?.layer?.id ? { id: feature.layer.id } : null,
+        layerId: feature?.layer?.id ?? null,
+        properties: feature?.properties ?? null,
+        geometry: includeGeometry
+          ? (feature?.geometry ?? null)
+          : (feature?.geometry
+            ? { type: feature.geometry.type, coordinates: [] }
+            : { type: 'Point', coordinates: [0, 0] }),
+      }))
+    : undefined;
+
+  return {
+    type: e?.type ?? null,
+    point: e?.point ? { x: e.point.x, y: e.point.y } : null,
+    lngLat: e?.lngLat ? { lng: e.lngLat.lng, lat: e.lngLat.lat } : null,
+    originalEvent: e?.originalEvent
+      ? {
+          type: e.originalEvent.type ?? null,
+          button: e.originalEvent.button ?? null,
+          ctrlKey: !!e.originalEvent.ctrlKey,
+          shiftKey: !!e.originalEvent.shiftKey,
+          altKey: !!e.originalEvent.altKey,
+          metaKey: !!e.originalEvent.metaKey,
+        }
+      : null,
+    layerId: e?.features?.[0]?.layer?.id ?? null,
+    features,
+    dataType: e?.dataType ?? null,
+    isSourceLoaded: e?.isSourceLoaded ?? null,
+    sourceId: e?.sourceId ?? null,
+    sourceDataType: e?.sourceDataType ?? null,
+    sourceDataChanged: e?.sourceDataChanged ?? null,
+    tile: e?.tile?.tileID?.canonical
+      ? {
+          z: e.tile.tileID.canonical.z,
+          x: e.tile.tileID.canonical.x,
+          y: e.tile.tileID.canonical.y,
+        }
+      : (e?.tile ?? null),
+    newProjection: e?.newProjection ?? null,
+    id: e?.id ?? null,
+  };
 }
 
 window.__mapHarness = {
@@ -244,4 +341,7 @@ window.__mapHarness = {
   setGeoJson,
   queryRendered,
   getClusterLeaves,
+  getClusterOptions,
+  getGeoJsonBounds,
+  createCompactMapEventDto,
 };

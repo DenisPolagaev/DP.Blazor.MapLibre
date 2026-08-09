@@ -71,6 +71,8 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     private DotNetObjectReference<TransformRequestCallbackHandler>? _transformRequestReference;
 
+    private DotNetObjectReference<MissingStyleImageResolverCallbackHandler>? _missingStyleImageResolverReference;
+
     private readonly ConcurrentDictionary<string, DotNetObjectReference<CustomLayerHandler>> _customLayerHandlers = new();
 
     private readonly ConcurrentDictionary<Guid, MapMarker> _markers = new();
@@ -93,7 +95,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <summary>
     /// The HTML element in which MapLibre GL JS will render the map, or the element's string id.
     /// The specified element must have no children.
-    /// MapLibre 5.17+ also accepts an <c>HTMLElement</c> from another window (for example an iframe document).
+    /// MapLibre also accepts an <c>HTMLElement</c> from another window (for example an iframe document).
     /// </summary>
     [Parameter]
     public string MapId { get; set; } = $"map-{Guid.NewGuid()}";
@@ -197,11 +199,11 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     {
         if (firstRender)
         {
-            await JsRuntime.InvokeAsync<IJSObjectReference>("import",
-                "./_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js");
-
             _jsModule = await JsRuntime.InvokeAsync<IJSObjectReference>("import",
                 "./_content/DP.Blazor.MapLibre/MapLibre.razor.js");
+
+            // MapLibre GL JS v6 is ESM-only; prepareMapLibreGl assigns the namespace to globalThis.maplibregl.
+            await _jsModule.InvokeVoidAsync("prepareMapLibreGl");
 
             _dotNetObjectReference = DotNetObjectReference.Create(this);
 
@@ -309,7 +311,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Sets the map container to a DOM element (for example from an iframe document). MapLibre 5.17+.
+    /// Sets the map container to a DOM element (for example from an iframe document).
     /// Call before the first render.
     /// </summary>
     public void SetContainer(object containerElement) => Options.Container = containerElement;
@@ -421,6 +423,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         _transformConstrainReference = null;
         _transformRequestReference?.Dispose();
         _transformRequestReference = null;
+
+        _missingStyleImageResolverReference?.Dispose();
+        _missingStyleImageResolverReference = null;
 
         try
         {
@@ -657,9 +662,15 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public Task<Listener> OnRender(Func<MapEvent, Task> handler) =>
         AddAsyncListener(MapEventNames.Render, handler);
 
+    /// <summary>
+    /// Observes unresolved missing style images. In MapLibre GL JS v6+, calling <c>AddImage</c>
+    /// from this handler no longer resolves the in-flight request — use
+    /// <see cref="SetMissingStyleImageResolver"/> to supply images.
+    /// </summary>
     public Task<Listener> OnStyleImageMissing(Action<MapStyleImageMissingEvent> handler) =>
         AddListener(MapEventNames.StyleImageMissing, handler);
 
+    /// <inheritdoc cref="OnStyleImageMissing(Action{MapStyleImageMissingEvent})"/>
     public Task<Listener> OnStyleImageMissing(Func<MapStyleImageMissingEvent, Task> handler) =>
         AddAsyncListener(MapEventNames.StyleImageMissing, handler);
 
@@ -948,6 +959,21 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Adds a fullscreen control. Pass <see cref="FullscreenControlOptions"/> for <c>pseudo</c> / container.
+    /// </summary>
+    public async ValueTask AddFullscreenControl(FullscreenControlOptions? options = null, ControlPosition? position = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addControl", ControlType.FullscreenControl.ToString(), position, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync(
+            "addControl", JsContainerId, ControlType.FullscreenControl.ToString(), position, options);
+    }
+
+    /// <summary>
     /// Adds a geolocate control to the given map container.
     /// </summary>
     public async ValueTask AddGeolocateControl(GeolocateControlOptions options, ControlPosition? position = null)
@@ -987,6 +1013,67 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         await _jsModule.InvokeVoidAsync("addScaleControl", JsContainerId, options, position);
+    }
+
+    /// <summary>
+    /// Adds an attribution control.
+    /// </summary>
+    public async ValueTask AddAttributionControl(AttributionControlOptions? options = null, ControlPosition? position = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addControl", ControlType.AttributionControl.ToString(), position, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync(
+            "addControl", JsContainerId, ControlType.AttributionControl.ToString(), position, options);
+    }
+
+    /// <summary>
+    /// Adds a MapLibre logo control.
+    /// </summary>
+    public async ValueTask AddLogoControl(LogoControlOptions? options = null, ControlPosition? position = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addControl", ControlType.LogoControl.ToString(), position, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync(
+            "addControl", JsContainerId, ControlType.LogoControl.ToString(), position, options);
+    }
+
+    /// <summary>
+    /// Adds a terrain toggle control. Options match <see cref="TerrainSpecification"/>.
+    /// </summary>
+    public async ValueTask AddTerrainControl(TerrainSpecification options, ControlPosition? position = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addControl", ControlType.TerrainControl.ToString(), position, options);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync(
+            "addControl", JsContainerId, ControlType.TerrainControl.ToString(), position, options);
+    }
+
+    /// <summary>
+    /// Adds a globe / mercator projection toggle control.
+    /// </summary>
+    public async ValueTask AddGlobeControl(ControlPosition? position = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addControl", ControlType.GlobeControl.ToString(), position, null);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync(
+            "addControl", JsContainerId, ControlType.GlobeControl.ToString(), position, null);
     }
 
     /// <summary>
@@ -1069,6 +1156,10 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeVoidAsync("addSource", JsContainerId, id, source);
     }
 
+    /// <summary>
+    /// Applies GeoJSON data to an existing source and waits until MapLibre finishes processing
+    /// (<c>setData</c> Promise in MapLibre GL JS 6+).
+    /// </summary>
     public async ValueTask SetSourceData(string id, GeoJsonSource source)
     {
         if (_bulkTransaction is not null)
@@ -1083,6 +1174,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             str => _jsModule.InvokeVoidAsync("setSourceData", JsContainerId, id, str));
     }
 
+    /// <inheritdoc cref="SetSourceData(string, GeoJsonSource)"/>
+    public ValueTask SetSourceDataAsync(string id, GeoJsonSource source) =>
+        SetSourceData(id, source);
+
+    /// <summary>
+    /// Applies GeoJSON from a JSON string and waits until MapLibre finishes processing.
+    /// </summary>
     public async ValueTask SetSourceDataAsJson(string id, string data)
     {
         if (_bulkTransaction is not null)
@@ -1093,6 +1191,10 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
         await _jsModule.InvokeVoidAsync("setSourceDataAsJson", JsContainerId, id, data);
     }
+
+    /// <inheritdoc cref="SetSourceDataAsJson(string, string)"/>
+    public ValueTask SetSourceDataAsJsonAsync(string id, string data) =>
+        SetSourceDataAsJson(id, data);
 
     /// <summary>
     /// Updates tile URLs for an existing raster or vector tile source without removing dependent layers.
@@ -1149,7 +1251,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Applies an incremental diff to an existing GeoJSON source.
+    /// Applies an incremental diff to an existing GeoJSON source and waits until processing completes.
     /// Requires every feature in the source to have a unique id (or <c>promoteId</c> on the source).
     /// </summary>
     /// <param name="id">The GeoJSON source id.</param>
@@ -1158,28 +1260,23 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     {
         if (_bulkTransaction is not null)
         {
-            _bulkTransaction.Add("updateSourceData", id, diff, false);
+            _bulkTransaction.Add("updateSourceData", id, diff);
             return;
         }
 
-        await _jsModule.InvokeVoidAsync("updateSourceData", JsContainerId, id, diff, false);
+        await _jsModule.InvokeVoidAsync("updateSourceData", JsContainerId, id, diff);
     }
 
-    /// <summary>
-    /// Applies an incremental diff to an existing GeoJSON source and waits until processing completes.
-    /// </summary>
-    /// <param name="id">The GeoJSON source id.</param>
-    /// <param name="diff">The diff to apply (remove, add, update).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <inheritdoc cref="UpdateSourceData(string, GeoJsonSourceDiff)"/>
     public async ValueTask UpdateSourceDataAsync(string id, GeoJsonSourceDiff diff, CancellationToken cancellationToken = default)
     {
         if (_bulkTransaction is not null)
         {
-            _bulkTransaction.Add("updateSourceData", id, diff, true);
+            _bulkTransaction.Add("updateSourceData", id, diff);
             return;
         }
 
-        await _jsModule.InvokeVoidAsync("updateSourceData", cancellationToken, JsContainerId, id, diff, true);
+        await _jsModule.InvokeVoidAsync("updateSourceData", cancellationToken, JsContainerId, id, diff);
     }
 
     /// <summary>
@@ -1809,6 +1906,20 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Supplies missing style images (MapLibre GL JS v6+). Call <see cref="AddImage"/> inside
+    /// the resolver before the returned task completes. Pass <c>null</c> to clear.
+    /// </summary>
+    public async ValueTask SetMissingStyleImageResolver(Func<string, Task>? handler)
+    {
+        _missingStyleImageResolverReference?.Dispose();
+        _missingStyleImageResolverReference = handler is null
+            ? null
+            : DotNetObjectReference.Create(new MissingStyleImageResolverCallbackHandler(handler));
+        await _jsModule.InvokeVoidAsync(
+            "setMissingStyleImageResolver", JsContainerId, _missingStyleImageResolverReference);
+    }
+
+    /// <summary>
     /// Sets the event parent to bubble events to another map instance, or clears the parent when <paramref name="parentMapId"/> is null.
     /// </summary>
     /// <param name="parentMapId">The <see cref="MapId"/> of the parent map, or null to clear.</param>
@@ -2071,8 +2182,20 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public async ValueTask<IFeature[]> QueryRenderedFeatures(object? query = null, object? options = null) =>
         await _jsModule.InvokeAsync<IFeature[]>("queryRenderedFeatures", JsContainerId, query, options);
 
+    /// <summary>
+    /// Queries rendered features with typed <see cref="QueryRenderedFeaturesOptions"/>.
+    /// </summary>
+    public ValueTask<IFeature[]> QueryRenderedFeatures(object? query, QueryRenderedFeaturesOptions options) =>
+        QueryRenderedFeatures(query, (object)options);
+
     public async ValueTask<IFeature[]> QueryRenderedFeaturesWithoutGeometriesReturned(object? query = null, object? options = null) =>
         await _jsModule.InvokeAsync<IFeature[]>("queryRenderedFeaturesWithoutGeometriesReturned", JsContainerId, query, options);
+
+    /// <inheritdoc cref="QueryRenderedFeatures(object?, QueryRenderedFeaturesOptions)"/>
+    public ValueTask<IFeature[]> QueryRenderedFeaturesWithoutGeometriesReturned(
+        object? query,
+        QueryRenderedFeaturesOptions options) =>
+        QueryRenderedFeaturesWithoutGeometriesReturned(query, (object)options);
 
     /// <summary>
     /// Queries rendered features and deserializes them as <see cref="LayerFeatureFeature"/> objects.
@@ -2461,6 +2584,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeVoidAsync("setFeatureState", JsContainerId, feature, state);
     }
 
+    /// <summary>
+    /// Updates feature state using a typed <see cref="FeatureState"/> dictionary.
+    /// </summary>
+    public ValueTask SetFeatureState(FeatureIdentifier feature, FeatureState state) =>
+        SetFeatureState(feature, (object)state);
+
     public async ValueTask SetGlobalStateProperty(string propertyName, object value) =>
         await _jsModule.InvokeVoidAsync("setGlobalStateProperty", JsContainerId, propertyName, value);
 
@@ -2494,6 +2623,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
         await _jsModule.InvokeVoidAsync("setFilter", JsContainerId, layerId, filter, options);
     }
+
+    /// <summary>
+    /// Sets a typed style-spec <see cref="FilterSpecification"/> on a layer.
+    /// </summary>
+    public ValueTask SetFilter(string layerId, FilterSpecification? filter, StyleSetterOptions? options = null) =>
+        SetFilter(layerId, filter?.Expression, options);
 
     /// <summary>
     /// Sets the value of a layout property in the specified style layer.
@@ -2716,6 +2851,15 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Applies a typed <see cref="StyleSpecification"/> document.
+    /// </summary>
+    public ValueTask SetStyle(StyleSpecification style, SetStyleOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(style);
+        return SetStyle(OneOf<JsonObject, string>.FromT0(style.ToJsonObject()), options);
+    }
+
+    /// <summary>
     /// Stops any animated transition currently underway on the map.
     /// </summary>
     public async ValueTask Stop() =>
@@ -2856,6 +3000,32 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Updates an <c>image</c> source from an already-decoded image (MapLibre 6.1+), skipping a network fetch.
+    /// </summary>
+    public ValueTask UpdateImageSourceWithImageAsync(
+        string sourceId,
+        IJSObjectReference image,
+        IReadOnlyList<IReadOnlyList<double>>? coordinates = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(image);
+        return _jsModule.InvokeVoidAsync(
+            "updateImageSource",
+            JsContainerId,
+            sourceId,
+            new { image, coordinates });
+    }
+
+    /// <summary>
+    /// Sets whether a raster tile source premultiplies alpha (MapLibre 6+).
+    /// </summary>
+    public ValueTask SetRasterPremultiplyAlphaAsync(string sourceId, bool premultiplyAlpha)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeVoidAsync("setRasterPremultiplyAlpha", JsContainerId, sourceId, premultiplyAlpha);
+    }
+
+    /// <summary>
     /// Sets corner coordinates for an image, video, or canvas source (TL, TR, BR, BL).
     /// </summary>
     public ValueTask SetSourceCoordinatesAsync(string sourceId, IReadOnlyList<IReadOnlyList<double>> coordinates)
@@ -2900,6 +3070,33 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
         ArgumentNullException.ThrowIfNull(options);
         return _jsModule.InvokeVoidAsync("setClusterOptions", JsContainerId, sourceId, options);
+    }
+
+    /// <summary>
+    /// Returns the current cluster options for a GeoJSON source (MapLibre 6.1+).
+    /// </summary>
+    public ValueTask<SetClusterOptions> GetClusterOptionsAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeAsync<SetClusterOptions>("getClusterOptions", JsContainerId, sourceId);
+    }
+
+    /// <summary>
+    /// Returns the GeoJSON currently held by a GeoJSON source.
+    /// </summary>
+    public ValueTask<JsonElement> GetGeoJsonDataAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeAsync<JsonElement>("getGeoJsonData", JsContainerId, sourceId);
+    }
+
+    /// <summary>
+    /// Returns bounds for a GeoJSON source.
+    /// </summary>
+    public ValueTask<LngLatBounds?> GetGeoJsonBoundsAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return _jsModule.InvokeAsync<LngLatBounds?>("getGeoJsonBounds", JsContainerId, sourceId);
     }
 
     /// <summary>

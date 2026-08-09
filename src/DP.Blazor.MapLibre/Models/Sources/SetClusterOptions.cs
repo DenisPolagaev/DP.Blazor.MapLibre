@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace DP.Blazor.MapLibre.Models.Sources;
 
 /// <summary>
-/// Options for <see cref="MapLibre.SetClusterOptionsAsync"/>.
+/// Options for <see cref="MapLibre.SetClusterOptionsAsync"/> / <see cref="MapLibre.GetClusterOptionsAsync"/>.
+/// Matches MapLibre <c>SetClusterOptions</c> / <c>GetClusterOptions</c> (cluster, clusterMaxZoom, clusterRadius).
 /// </summary>
 public sealed class SetClusterOptions
 {
@@ -18,8 +19,4 @@ public sealed class SetClusterOptions
     [JsonPropertyName("clusterMaxZoom")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? ClusterMaxZoom { get; set; }
-
-    [JsonPropertyName("clusterMinPoints")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? ClusterMinPoints { get; set; }
 }

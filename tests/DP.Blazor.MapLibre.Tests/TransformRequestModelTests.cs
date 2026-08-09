@@ -73,4 +73,60 @@ public class TransformRequestModelTests
         Assert.Equal("/icons/fire.svg", document.RootElement.GetProperty("url").GetString());
         Assert.Single(document.RootElement.EnumerateObject());
     }
+
+    [Theory]
+    [InlineData(RequestMethod.Get, "GET")]
+    [InlineData(RequestMethod.Post, "POST")]
+    [InlineData(RequestMethod.Put, "PUT")]
+    public void TransformRequestResult_Method_UsesMapLibreHttpVerbs(RequestMethod method, string expected)
+    {
+        var json = JsonSerializer.Serialize(
+            new TransformRequestResult { Url = "https://x", Method = method },
+            MapLibreJsonSerializer.TransformRequestOptions);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(expected, document.RootElement.GetProperty("method").GetString());
+    }
+
+    [Theory]
+    [InlineData(ResponseBodyType.String, "string")]
+    [InlineData(ResponseBodyType.Json, "json")]
+    [InlineData(ResponseBodyType.ArrayBuffer, "arrayBuffer")]
+    [InlineData(ResponseBodyType.Image, "image")]
+    public void TransformRequestResult_Type_UsesMapLibreAjaxValues(ResponseBodyType type, string expected)
+    {
+        var json = JsonSerializer.Serialize(
+            new TransformRequestResult { Url = "https://x", Type = type },
+            MapLibreJsonSerializer.TransformRequestOptions);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(expected, document.RootElement.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void TransformRequestResult_RoundTripsFullRequestParametersShape()
+    {
+        const string json = """
+            {
+              "url": "https://tiles.example/1/2/3.pbf",
+              "headers": { "Authorization": "Bearer x" },
+              "method": "GET",
+              "body": null,
+              "type": "arrayBuffer",
+              "credentials": "include",
+              "collectResourceTiming": true,
+              "cache": "no-store",
+              "referrerPolicy": "origin"
+            }
+            """;
+
+        var restored = JsonSerializer.Deserialize<TransformRequestResult>(json, MapLibreJsonSerializer.TransformRequestOptions);
+        Assert.NotNull(restored);
+        Assert.Equal("https://tiles.example/1/2/3.pbf", restored!.Url);
+        Assert.Equal(RequestMethod.Get, restored.Method);
+        Assert.Equal(ResponseBodyType.ArrayBuffer, restored.Type);
+        Assert.Equal(RequestCredentials.Include, restored.Credentials);
+        Assert.Equal("origin", restored.ReferrerPolicy);
+        Assert.Equal("no-store", restored.Cache);
+        Assert.True(restored.CollectResourceTiming);
+        Assert.Equal("Bearer x", restored.Headers!["Authorization"]);
+    }
 }

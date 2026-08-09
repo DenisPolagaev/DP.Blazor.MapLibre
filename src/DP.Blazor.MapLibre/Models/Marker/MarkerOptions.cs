@@ -68,17 +68,18 @@ public class MarkerOptions
 
     /// <summary>
     /// Marker's opacity when it's in clear view (not behind 3D terrain).
+    /// MapLibre accepts a CSS string or a number (0–1).
     /// </summary>
     [JsonPropertyName("opacity")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Opacity { get; set; }
+    public object? Opacity { get; set; }
 
     /// <summary>
-    /// Marker's opacity when it's behind 3D terrain.
+    /// Marker's opacity when it's behind 3D terrain. String or number (0–1).
     /// </summary>
     [JsonPropertyName("opacityWhenCovered")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OpacityWhenCovered { get; set; }
+    public object? OpacityWhenCovered { get; set; }
 
     /// <summary>
     /// 'map' aligns the Marker to the plane of the map.

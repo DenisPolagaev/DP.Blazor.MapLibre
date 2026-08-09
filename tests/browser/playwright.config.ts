@@ -25,7 +25,7 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: 'npx --yes serve fixtures -l 4173',
+    command: 'node static-server.mjs',
     cwd: __dirname,
     port: 4173,
     reuseExistingServer: !process.env.CI,

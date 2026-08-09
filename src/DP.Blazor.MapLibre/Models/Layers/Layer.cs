@@ -44,7 +44,7 @@ public abstract class Layer
 
     [JsonPropertyName("filter")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? Filter { get; set; } // ["==", ["get", "color" ], "polygon"]
+    public object? Filter { get; set; }
 
     [JsonPropertyName("source-layer")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

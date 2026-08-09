@@ -22,6 +22,14 @@ export interface CompactMapEventDto {
   } | null;
   layerId: string | null;
   features?: CompactMapFeatureDto[];
+  dataType?: string | null;
+  isSourceLoaded?: boolean | null;
+  sourceId?: string | null;
+  sourceDataType?: string | null;
+  sourceDataChanged?: boolean | null;
+  tile?: { z: number; x: number; y: number } | unknown | null;
+  newProjection?: unknown | null;
+  id?: string | null;
 }
 
 export interface CompactEventOptions {
@@ -58,6 +66,9 @@ export function createCompactMapEventDto(
   const point = e?.['point'] as { x?: number; y?: number } | undefined;
   const lngLat = e?.['lngLat'] as { lng?: number; lat?: number } | undefined;
   const originalEvent = e?.['originalEvent'] as Record<string, unknown> | undefined;
+  const tile = e?.['tile'] as Record<string, unknown> | undefined;
+  const tileId = tile?.['tileID'] as Record<string, unknown> | undefined;
+  const canonical = tileId?.['canonical'] as { z?: number; x?: number; y?: number } | undefined;
 
   return {
     type: (e?.['type'] as string | null | undefined) ?? null,
@@ -75,5 +86,15 @@ export function createCompactMapEventDto(
       : null,
     layerId: (features?.[0]?.layerId as string | null | undefined) ?? null,
     features,
+    dataType: (e?.['dataType'] as string | null | undefined) ?? null,
+    isSourceLoaded: (e?.['isSourceLoaded'] as boolean | null | undefined) ?? null,
+    sourceId: (e?.['sourceId'] as string | null | undefined) ?? null,
+    sourceDataType: (e?.['sourceDataType'] as string | null | undefined) ?? null,
+    sourceDataChanged: (e?.['sourceDataChanged'] as boolean | null | undefined) ?? null,
+    tile: canonical
+      ? { z: canonical.z ?? 0, x: canonical.x ?? 0, y: canonical.y ?? 0 }
+      : (tile ?? null),
+    newProjection: e?.['newProjection'] ?? null,
+    id: (e?.['id'] as string | null | undefined) ?? null,
   };
 }

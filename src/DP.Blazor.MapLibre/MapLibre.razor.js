@@ -14,6 +14,8 @@ const listenerRegistry = globalThis.__blazorMapLibreListenerRegistry ??= {};
 
 /**
  * Ensures maplibre-gl is on globalThis before creating maps.
+ * MapLibre GL JS v6 is ESM-only; we re-export the namespace onto globalThis
+ * so plugins and existing interop that expect window.maplibregl keep working.
  * Does not load any plugins.
  */
 export async function prepareMapLibreGl() {
@@ -21,7 +23,8 @@ export async function prepareMapLibreGl() {
         return;
     }
 
-    await import('./maplibre-gl/dist/maplibre-gl.js');
+    const maplibre = await import('./maplibre-gl/dist/maplibre-gl.mjs');
+    globalThis.maplibregl = maplibre;
 
     if (!globalThis.maplibregl?.Map) {
         throw new Error('MapLibre GL JS is not available on globalThis.maplibregl');
@@ -323,7 +326,9 @@ function resolveContainerElement(container) {
  * @param {Object} dotnetReference - A .NET instance reference for invoking interop methods.
  * @param {Object} [transformConstrainReference] - Optional .NET reference for transformConstrain callback.
  */
-export function initializeMap(options, dotnetReference, transformConstrainReference) {
+export async function initializeMap(options, dotnetReference, transformConstrainReference) {
+    await prepareMapLibreGl();
+
     if (transformConstrainReference) {
         options = {
             ...options,
@@ -516,7 +521,23 @@ function createCompactMapEventDto(e, options) {
             }
             : null,
         layerId: e?.features?.[0]?.layer?.id ?? null,
-        features
+        features,
+        // Source / style data events (MapLibre 6 MapSourceDataEvent / MapStyleDataEvent).
+        dataType: e?.dataType ?? null,
+        isSourceLoaded: e?.isSourceLoaded ?? null,
+        sourceId: e?.sourceId ?? null,
+        sourceDataType: e?.sourceDataType ?? null,
+        sourceDataChanged: e?.sourceDataChanged ?? null,
+        tile: e?.tile?.tileID?.canonical
+            ? {
+                z: e.tile.tileID.canonical.z,
+                x: e.tile.tileID.canonical.x,
+                y: e.tile.tileID.canonical.y
+            }
+            : (e?.tile ?? null),
+        // Projection / missing-image events.
+        newProjection: e?.newProjection ?? null,
+        id: e?.id ?? null
     };
 }
 
@@ -851,36 +872,38 @@ export function addSource(container, id, source) {
 
 
 /**
- * Updates the data of a specific GeoJSON source
+ * Updates the data of a specific GeoJSON source.
+ * MapLibre GL JS v6: setData always returns a Promise (no waitForCompletion flag).
  *
  * @param {string} container - The identifier for the map container instance.
  * @param {string} id - The unique identifier for the source you wish to update.
  * @param {Object} data - The GeoJSON data you wish to apply to the source
  */
-export function setSourceData(container, id, data) {
+export async function setSourceData(container, id, data) {
     data = cutAntiMeridian(container, data);
     const source = mapInstances[container].getSource(id);
     if (source === undefined) {
         throw new Error(`Could not find source with id ${id}`);
     }
-    source.setData(data);
+    await source.setData(data);
 }
 
 /**
- * Updates the data of a specific GeoJSON source
+ * Updates the data of a specific GeoJSON source from a JSON string.
+ * MapLibre GL JS v6: setData always returns a Promise.
  *
  * @param {string} container - The identifier for the map container instance.
  * @param {string} id - The unique identifier for the source you wish to update.
  * @param {string} data - The GeoJSON data you wish to apply to the source
  */
-export function setSourceDataAsJson(container, id, data) {
+export async function setSourceDataAsJson(container, id, data) {
     let jsonData = JSON.parse(data);
     jsonData = cutAntiMeridian(container, jsonData);
     const source = mapInstances[container].getSource(id);
     if (source === undefined) {
         throw new Error(`Could not find source with id ${id}`);
     }
-    source.setData(jsonData);
+    await source.setData(jsonData);
 }
 
 /**
@@ -941,18 +964,15 @@ export function upsertTileSource(container, id, source) {
     }
 
     if (zoomRangeChanged) {
-        const caches = map.style?.sourceCaches ?? map.style?._sourceCaches;
-        const cache = caches?.[id];
-        if (cache && typeof cache.clearTiles === "function") {
-            cache.clearTiles();
-            if (typeof cache.update === "function") {
-                cache.update(map.transform);
-            }
-        } else if (typeof existing.load === "function") {
+        // MapLibre GL JS v6: style.sourceCaches / map.transform were removed; use tileManagers.
+        const tileManager = map.style?.tileManagers?.[id];
+        if (tileManager && typeof tileManager.clearTiles === 'function') {
+            tileManager.clearTiles();
+        } else if (typeof existing.load === 'function') {
             existing.load();
         }
 
-        if (typeof map.triggerRepaint === "function") {
+        if (typeof map.triggerRepaint === 'function') {
             map.triggerRepaint();
         }
     }
@@ -988,14 +1008,14 @@ export function setSourceUrl(container, id, url) {
 
 /**
  * Applies an incremental diff to a GeoJSON source.
+ * MapLibre GL JS v6: updateData always returns a Promise (no waitForCompletion flag).
  *
  * @param {string} container - The map container id.
  * @param {string} id - The GeoJSON source id.
  * @param {object} diff - A GeoJSONSourceDiff object (add, remove, removeAll, update).
- * @param {boolean} [waitForCompletion=false] - When true, waits until the worker finishes processing.
- * @returns {Promise<void>|undefined}
+ * @returns {Promise<void>}
  */
-export async function updateSourceData(container, id, diff, waitForCompletion = false) {
+export async function updateSourceData(container, id, diff) {
     const source = mapInstances[container].getSource(id);
     if (source === undefined) {
         throw new Error(`Could not find source with id ${id}`);
@@ -1005,12 +1025,7 @@ export async function updateSourceData(container, id, diff, waitForCompletion = 
         throw new Error(`Source with id ${id} does not support updateData`);
     }
 
-    if (waitForCompletion) {
-        await source.updateData(diff, true);
-        return;
-    }
-
-    source.updateData(diff, false);
+    await source.updateData(diff);
 }
 
 /**
@@ -2338,12 +2353,12 @@ export function createGeoportalMapHandle(container) {
         getViewState() {
             return getViewState(container);
         },
-        setGeoJson(sourceId, data) {
+        async setGeoJson(sourceId, data) {
             const source = map.getSource(sourceId);
             if (!source || typeof source.setData !== 'function') {
                 throw new Error(`Source '${sourceId}' is not a GeoJSON source.`);
             }
-            source.setData(cutAntiMeridian(container, data));
+            await source.setData(cutAntiMeridian(container, data));
         },
         async getClusterLeaves(sourceId, clusterId, limit = 10, offset = 0) {
             return await getClusterLeaves(container, sourceId, clusterId, limit, offset);
@@ -2657,6 +2672,20 @@ export function setTransformConstrain(container, dotnetReference) {
     mapInstances[container].transformConstrain = createTransformConstrainFn(dotnetReference);
 }
 
+function matrixFromCustomRenderInput(optionsOrMatrix) {
+    if (!optionsOrMatrix) {
+        return [];
+    }
+
+    // MapLibre GL JS v6+: second arg is CustomRenderMethodInput, not a raw matrix.
+    const matrix = optionsOrMatrix.modelViewProjectionMatrix ?? optionsOrMatrix;
+    if (typeof matrix.length === 'number') {
+        return Array.from(matrix);
+    }
+
+    return [];
+}
+
 export function addCustomLayer(container, layerId, options, dotnetReference, beforeId) {
     const map = mapInstances[container];
     customLayerHandlers.set(layerId, dotnetReference);
@@ -2672,11 +2701,11 @@ export function addCustomLayer(container, layerId, options, dotnetReference, bef
             dotnetReference.invokeMethodAsync('OnRemove').catch(console.error);
             customLayerHandlers.delete(layerId);
         },
-        prerender(gl, matrix) {
-            dotnetReference.invokeMethodAsync('OnPrerender', Array.from(matrix)).catch(console.error);
+        prerender(gl, optionsOrMatrix) {
+            dotnetReference.invokeMethodAsync('OnPrerender', matrixFromCustomRenderInput(optionsOrMatrix)).catch(console.error);
         },
-        render(gl, matrix) {
-            dotnetReference.invokeMethodAsync('OnRender', Array.from(matrix)).catch(console.error);
+        render(gl, optionsOrMatrix) {
+            dotnetReference.invokeMethodAsync('OnRender', matrixFromCustomRenderInput(optionsOrMatrix)).catch(console.error);
         },
     };
 
@@ -2695,15 +2724,34 @@ export function addCustomLayer(container, layerId, options, dotnetReference, bef
 }
 
 export function timeControlSetNow(timestamp) {
-    globalThis.maplibregl.timeControl.setNow(timestamp);
+    // MapLibre GL JS v6: setNow/restoreNow/isTimeFrozen are top-level exports (timeControl removed).
+    globalThis.maplibregl.setNow(timestamp);
 }
 
 export function timeControlRestoreNow() {
-    globalThis.maplibregl.timeControl.restoreNow();
+    globalThis.maplibregl.restoreNow();
 }
 
 export function timeControlIsFrozen() {
-    return globalThis.maplibregl.timeControl.isTimeFrozen();
+    return globalThis.maplibregl.isTimeFrozen();
+}
+
+/**
+ * Supplies missing style images (MapLibre GL JS v6+).
+ * Replaces resolving images inside a styleimagemissing listener via addImage.
+ * @param {string} container
+ * @param {Object|null} dotnetReference - .NET handler with Invoke(id) => Promise, or null to clear.
+ */
+export function setMissingStyleImageResolver(container, dotnetReference) {
+    const map = requireMap(container, 'setMissingStyleImageResolver');
+    if (!dotnetReference) {
+        map.setMissingStyleImageResolver(null);
+        return;
+    }
+
+    map.setMissingStyleImageResolver(async (id) => {
+        await dotnetReference.invokeMethodAsync('Invoke', id);
+    });
 }
 
 /**
@@ -3260,10 +3308,10 @@ export async function executeTransaction(container, data) {
                 removeSprite(container, d.data[0]);
                 break;
             case "setSourceData":
-                setSourceData(container, d.data[0], d.data[1]);
+                await setSourceData(container, d.data[0], d.data[1]);
                 break;
             case "setSourceDataAsJson":
-                setSourceDataAsJson(container, d.data[0], d.data[1]);
+                await setSourceDataAsJson(container, d.data[0], d.data[1]);
                 break;
             case "setSourceTiles":
             case "setVectorSourceTiles":
@@ -3279,7 +3327,7 @@ export async function executeTransaction(container, data) {
                 await ensureImages(container, d.data[0]);
                 break;
             case "updateSourceData":
-                updateSourceData(container, d.data[0], d.data[1], d.data[2] ?? false);
+                await updateSourceData(container, d.data[0], d.data[1]);
                 break;
             case "moveLayer":
                 moveLayer(container, d.data[0], d.data[1]);
@@ -3438,14 +3486,94 @@ function requireSourceWithMethod(container, sourceId, methodName, apiName) {
 }
 
 /**
- * Updates ImageSource URL and optional coordinates.
+ * Updates ImageSource URL and/or decoded image, with optional coordinates.
+ * MapLibre 6.1+: options may be { url } or { image } (+ coordinates).
  * @param {string} container
  * @param {string} sourceId
- * @param {{ url: string, coordinates?: number[][] }} options
+ * @param {{ url?: string, image?: ImageBitmap|HTMLImageElement|HTMLCanvasElement|ImageData, coordinates?: number[][] }} options
  */
-export function updateImageSource(container, sourceId, options) {
+export async function updateImageSource(container, sourceId, options) {
     const source = requireSourceWithMethod(container, sourceId, 'updateImage', 'updateImageSource');
-    source.updateImage(options);
+    source.updateImage(options ?? {});
+}
+
+/**
+ * Sets or clears premultiply-alpha for a raster tile source (MapLibre 6+).
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {boolean} premultiplyAlpha
+ */
+export function setRasterPremultiplyAlpha(container, sourceId, premultiplyAlpha) {
+    const source = requireSourceWithMethod(container, sourceId, 'setPremultiplyAlpha', 'setRasterPremultiplyAlpha');
+    source.setPremultiplyAlpha(!!premultiplyAlpha);
+}
+
+/**
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {object} options
+ */
+export async function setClusterOptions(container, sourceId, options) {
+    const source = requireSourceWithMethod(container, sourceId, 'setClusterOptions', 'setClusterOptions');
+    const payload = {};
+    if (options && typeof options === 'object') {
+        if (options.cluster !== undefined) payload.cluster = options.cluster;
+        if (options.clusterRadius !== undefined) payload.clusterRadius = options.clusterRadius;
+        if (options.clusterMaxZoom !== undefined) payload.clusterMaxZoom = options.clusterMaxZoom;
+    }
+    await source.setClusterOptions(payload);
+}
+
+/**
+ * @param {string} container
+ * @param {string} sourceId
+ * @returns {{ cluster?: boolean, clusterMaxZoom?: number, clusterRadius?: number }}
+ */
+export function getClusterOptions(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'getClusterOptions', 'getClusterOptions');
+    return source.getClusterOptions();
+}
+
+/**
+ * @param {string} container
+ * @param {string} sourceId
+ * @returns {Promise<object>}
+ */
+export async function getGeoJsonData(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'getData', 'getGeoJsonData');
+    return await source.getData();
+}
+
+/**
+ * @param {string} container
+ * @param {string} sourceId
+ * @returns {Promise<{ _sw: { lng: number, lat: number }, _ne: { lng: number, lat: number } } | object>}
+ */
+export async function getGeoJsonBounds(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'getBounds', 'getGeoJsonBounds');
+    const bounds = await source.getBounds();
+    if (!bounds) {
+        return null;
+    }
+
+    if (typeof bounds.getSouthWest === 'function' && typeof bounds.getNorthEast === 'function') {
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+        return {
+            _sw: { lng: sw.lng, lat: sw.lat },
+            _ne: { lng: ne.lng, lat: ne.lat }
+        };
+    }
+
+    if (typeof bounds.toArray === 'function') {
+        const [[west, south], [east, north]] = bounds.toArray();
+        return {
+            _sw: { lng: west, lat: south },
+            _ne: { lng: east, lat: north }
+        };
+    }
+
+    return bounds;
 }
 
 /**
@@ -3483,17 +3611,6 @@ export function playCanvasSource(container, sourceId) {
 export function pauseCanvasSource(container, sourceId) {
     const source = requireSourceWithMethod(container, sourceId, 'pause', 'pauseCanvasSource');
     source.pause();
-}
-
-/**
- * Updates GeoJSON clustering options without recreating the source.
- * @param {string} container
- * @param {string} sourceId
- * @param {object} options
- */
-export function setClusterOptions(container, sourceId, options) {
-    const source = requireSourceWithMethod(container, sourceId, 'setClusterOptions', 'setClusterOptions');
-    source.setClusterOptions(options ?? {});
 }
 
 /**
@@ -3593,27 +3710,40 @@ export function refreshTiles(container, sourceId) {
     mapInstances[container].refreshTiles(sourceId);
 }
 /**
- * Refreshes tiles in a specified source and tiles.
+ * Refreshes specific tiles in a source when possible.
+ * Prefers Map#refreshTiles; falls back to TileManager private reload only when present.
  * @param {string} container - The map container.
  * @param {string} sourceId - The source id
  * @param {Array<object>} tileIds - Tile id objects with { z, x, y }
  */
 export function refreshTileIDs(container, sourceId, tileIds) {
-    const mapInstance = mapInstances[container];
-    const tileManager = mapInstance.style.tileManagers[sourceId];
-
-
-    for (const id of tileManager._inViewTiles.getAllIds()) {
-        const tile = tileManager._inViewTiles.getTileById(id);
-        const c = tile.tileID.canonical;
-
-        if (tileIds.some(t => t.z === c.z && t.x === c.x && t.y === c.y)) {
-            tileManager._reloadTile(id, 'expired');
+    const mapInstance = requireMap(container, 'refreshTileIDs');
+    if (!Array.isArray(tileIds) || tileIds.length === 0) {
+        if (typeof mapInstance.refreshTiles === 'function') {
+            mapInstance.refreshTiles(sourceId);
         }
+        return;
     }
-    tileManager._outOfViewCache.filter(tile =>
-        !tileIds.some(t => t.z === tile.tileID.canonical.z &&
-            t.x === tile.tileID.canonical.x &&
-            t.y === tile.tileID.canonical.y)
-    );
+
+    const tileManager = mapInstance.style?.tileManagers?.[sourceId];
+    const inView = tileManager?._inViewTiles;
+    if (tileManager && inView && typeof inView.getAllIds === 'function' && typeof tileManager._reloadTile === 'function') {
+        for (const id of inView.getAllIds()) {
+            const tile = inView.getTileById(id);
+            const c = tile?.tileID?.canonical;
+            if (!c) {
+                continue;
+            }
+
+            if (tileIds.some(t => t.z === c.z && t.x === c.x && t.y === c.y)) {
+                tileManager._reloadTile(id, 'expired');
+            }
+        }
+        return;
+    }
+
+    // Public fallback: reload the whole source rather than touching private TileManager fields.
+    if (typeof mapInstance.refreshTiles === 'function') {
+        mapInstance.refreshTiles(sourceId);
+    }
 }

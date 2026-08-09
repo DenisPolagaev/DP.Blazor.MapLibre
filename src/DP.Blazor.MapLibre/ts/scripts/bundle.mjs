@@ -23,7 +23,7 @@ await esbuild.build({
 
 await writeFile(
   path.resolve(root, '../wwwroot/js/.maplibre-gl-version'),
-  '5.17.0\n',
+  '6.2.0\n',
   'utf8',
 );
 

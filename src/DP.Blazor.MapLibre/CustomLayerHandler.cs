@@ -33,12 +33,13 @@ public abstract class CustomLayerHandler
     protected virtual Task OnRemoveAsync() => Task.CompletedTask;
 
     /// <summary>
-    /// Called before the layer is rendered. Receives the 4x4 transformation matrix as a 16-element array.
+    /// Called before the layer is rendered. Receives the 4x4 model-view-projection matrix
+    /// (from MapLibre <c>CustomRenderMethodInput.modelViewProjectionMatrix</c>) as 16 floats.
     /// </summary>
     protected virtual Task OnPrerenderAsync(float[] matrix) => Task.CompletedTask;
 
     /// <summary>
-    /// Called when the layer is rendered. Receives the 4x4 transformation matrix as a 16-element array.
+    /// Called when the layer is rendered. Receives the 4x4 model-view-projection matrix as 16 floats.
     /// WebGL drawing must be performed from JavaScript; use the matrix for coordinate transforms in .NET logic.
     /// </summary>
     protected virtual Task OnRenderAsync(float[] matrix) => Task.CompletedTask;

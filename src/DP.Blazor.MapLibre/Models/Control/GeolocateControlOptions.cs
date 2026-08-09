@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using DP.Blazor.MapLibre.Models.Camera;
 
 namespace DP.Blazor.MapLibre.Models.Control;
 
@@ -7,6 +8,10 @@ public class GeolocateControlOptions
     [JsonPropertyName("positionOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PositionOptions? PositionOptions { get; set; }
+
+    [JsonPropertyName("fitBoundsOptions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FitBoundOptions? FitBoundsOptions { get; set; }
 
     [JsonPropertyName("trackUserLocation")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

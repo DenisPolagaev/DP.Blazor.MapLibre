@@ -1,11 +1,32 @@
 using System.Text.Json;
 using DP.Blazor.MapLibre.Models.Event;
+using DP.Blazor.MapLibre.Models.Marker;
 using Xunit;
 
 namespace DP.Blazor.MapLibre.Tests;
 
 public class MapMarkerPopupTests
 {
+    [Fact]
+    public void MarkerOptions_Opacity_SerializesNumberLikeMapLibre()
+    {
+        var options = new MarkerOptions { Opacity = 0.5, OpacityWhenCovered = 0.1 };
+        var json = JsonSerializer.Serialize(options, MapLibreJsonSerializer.Options);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(0.5, doc.RootElement.GetProperty("opacity").GetDouble());
+        Assert.Equal(0.1, doc.RootElement.GetProperty("opacityWhenCovered").GetDouble());
+    }
+
+    [Fact]
+    public void MarkerOptions_Opacity_SerializesCssStringLikeMapLibre()
+    {
+        var options = new MarkerOptions { Opacity = "0.75", OpacityWhenCovered = "0" };
+        var json = JsonSerializer.Serialize(options, MapLibreJsonSerializer.Options);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("0.75", doc.RootElement.GetProperty("opacity").GetString());
+        Assert.Equal("0", doc.RootElement.GetProperty("opacityWhenCovered").GetString());
+    }
+
     [Fact]
     public void MapMarkerEvent_DeserializesLngLat()
     {

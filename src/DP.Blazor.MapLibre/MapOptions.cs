@@ -1,5 +1,10 @@
 using System.Text.Json.Serialization;
+using DP.Blazor.MapLibre.Converter;
 using DP.Blazor.MapLibre.Models;
+using DP.Blazor.MapLibre.Models.Camera;
+using DP.Blazor.MapLibre.Models.Control;
+using DP.Blazor.MapLibre.Models.Interaction;
+using OneOf;
 
 namespace DP.Blazor.MapLibre;
 
@@ -7,21 +12,12 @@ public class MapOptions
 {
     /// <summary>
     /// If set, an AttributionControl will be added to the map with the provided options.
-    /// Pass <c>false</c> to disable the attribution control.
-    /// <list type="table">
-    ///   <item>
-    ///     <term>compact</term>
-    ///     <description>Whether the control is compact (typically used on mobile). Default is <c>true</c>.</description>
-    ///   </item>
-    ///   <item>
-    ///     <term>customAttribution</term>
-    ///     <description>A custom attribution string (e.g., "MapLibre ...").</description>
-    ///   </item>
-    /// </list>
+    /// Pass <c>false</c> to disable the attribution control, or <see cref="AttributionControlOptions"/>.
     /// </summary>
     [JsonPropertyName("attributionControl")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? AttributionControl { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, AttributionControlOptions>))]
+    public OneOf<bool, AttributionControlOptions>? AttributionControl { get; set; }
 
     /// <summary>
     /// The initial bearing (rotation) of the map, measured in degrees counter-clockwise from north.
@@ -168,7 +164,7 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("cooperativeGestures")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? CooperativeGestures { get; set; }
+    public bool? CooperativeGestures { get; set; }
 
     /// <summary>
     /// If true, symbols from multiple sources can collide with each other during collision detection.
@@ -192,7 +188,8 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("dragPan")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? DragPan { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, DragPanOptions>))]
+    public OneOf<bool, DragPanOptions>? DragPan { get; set; }
 
     /// <summary>
     /// Enables or disables the \"drag to rotate\" interaction.
@@ -223,7 +220,7 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("fitBoundsOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? FitBoundsOptions { get; set; }
+    public FitBoundOptions? FitBoundsOptions { get; set; }
 
     /// <summary>
     /// Syncs the map’s position with the URL hash fragment.
@@ -412,7 +409,8 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("scrollZoom")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? ScrollZoom { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, AroundCenterOptions>))]
+    public OneOf<bool, AroundCenterOptions>? ScrollZoom { get; set; }
 
     /// <summary>
     /// The MapLibre style, either as a JSON URL or a full style object.
@@ -429,7 +427,8 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("touchPitch")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? TouchPitch { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, AroundCenterOptions>))]
+    public OneOf<bool, AroundCenterOptions>? TouchPitch { get; set; }
 
     /// <summary>
     /// Enables \"pinch to rotate and zoom\" interaction, or provides options for gesture behavior.
@@ -437,7 +436,8 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("touchZoomRotate")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? TouchZoomRotate { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, AroundCenterOptions>))]
+    public OneOf<bool, AroundCenterOptions>? TouchZoomRotate { get; set; }
 
     /// <summary>
     /// If true, the map will automatically resize when the window resizes. Default is true.
@@ -469,18 +469,68 @@ public class MapOptions
     public bool? ValidateStyle { get; set; }
 
     /// <summary>
-    /// When true, animated map transitions respect the user's reduced-motion preference (MapLibre 5.12+).
+    /// When true, animated map transitions respect the user's reduced-motion preference.
     /// </summary>
     [JsonPropertyName("reduceMotion")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ReduceMotion { get; set; }
 
     /// <summary>
-    /// Controls how many zoom levels vector tiles are sliced before overscaling (MapLibre 5.12+).
+    /// How many zoom levels vector tiles are sliced before overscaling.
+    /// MapLibre GL JS 6.x default is <c>4</c>; set <c>null</c>/omit for library default,
+    /// or pass a value (use intentional override). To restore pre-v6 overscale-only behavior
+    /// from JavaScript, pass <c>undefined</c> (not expressible as a C# null that is omitted —
+    /// omit this property).
     /// </summary>
-    [JsonPropertyName("experimentalZoomLevelsToOverscale")]
+    [JsonPropertyName("zoomLevelsToOverscale")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? ExperimentalZoomLevelsToOverscale { get; set; }
+    public int? ZoomLevelsToOverscale { get; set; }
+
+    /// <summary>
+    /// Obsolete name from MapLibre 5.x experimental API. Prefer <see cref="ZoomLevelsToOverscale"/>.
+    /// </summary>
+    [Obsolete("Use ZoomLevelsToOverscale (JSON: zoomLevelsToOverscale).")]
+    [JsonIgnore]
+    public int? ExperimentalZoomLevelsToOverscale
+    {
+        get => ZoomLevelsToOverscale;
+        set => ZoomLevelsToOverscale = value;
+    }
+
+    /// <summary>
+    /// Degrees of bearing change per pixel dragged while rotating.
+    /// </summary>
+    [JsonPropertyName("rotateSpeed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? RotateSpeed { get; set; }
+
+    /// <summary>
+    /// Degrees of pitch change per pixel dragged while pitching.
+    /// </summary>
+    [JsonPropertyName("pitchSpeed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? PitchSpeed { get; set; }
+
+    /// <summary>
+    /// Pitch (degrees) above which anisotropic filtering is applied to raster layers.
+    /// </summary>
+    [JsonPropertyName("anisotropicFilterPitch")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? AnisotropicFilterPitch { get; set; }
+
+    /// <summary>
+    /// Terrain skirt rendering: <c>auto</c> or <c>none</c>.
+    /// </summary>
+    [JsonPropertyName("terrainSkirtLength")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TerrainSkirtLength { get; set; }
+
+    /// <summary>
+    /// When true, rotation uses around-center interaction model.
+    /// </summary>
+    [JsonPropertyName("aroundCenter")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AroundCenter { get; set; }
 
     /// <summary>
     /// Initial map projection. Can also be changed at runtime via <see cref="MapLibre.SetProjection"/>.
@@ -498,7 +548,7 @@ public class MapOptions
 
     /// <summary>
     /// Snaps zoom levels to a grid when zooming via keyboard, scroll wheel, zoom buttons,
-    /// double-click, or double-tap. A value of <c>1.0</c> rounds to whole zoom levels (MapLibre 5.17+).
+    /// double-click, or double-tap. A value of <c>1.0</c> rounds to whole zoom levels.
     /// </summary>
     [JsonPropertyName("zoomSnap")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -162,4 +162,49 @@ public class EventModelTests
         Assert.NotNull(evt);
         Assert.Equal(EventType.BoxZoomEnd, evt!.Type);
     }
+
+    [Fact]
+    public void CompactMapEventDto_MatchesMapLibreRazorJsFieldNames()
+    {
+        // Keys emitted by createCompactMapEventDto in MapLibre.razor.js / ts/src/events.ts
+        const string json = """
+            {
+              "type": "sourcedata",
+              "point": null,
+              "lngLat": null,
+              "originalEvent": null,
+              "layerId": null,
+              "features": null,
+              "dataType": "source",
+              "isSourceLoaded": true,
+              "sourceId": "points",
+              "sourceDataType": "metadata",
+              "sourceDataChanged": false,
+              "tile": { "z": 1, "x": 2, "y": 3 },
+              "newProjection": null,
+              "id": null
+            }
+            """;
+
+        var evt = JsonSerializer.Deserialize<MapDataEvent>(json, MapLibreJsonSerializer.Options);
+        Assert.NotNull(evt);
+        Assert.Equal("metadata", evt!.SourceDataType);
+        Assert.Equal("points", evt.SourceId);
+        Assert.False(evt.SourceDataChanged);
+        Assert.Equal(1u, evt.Tile!.Z);
+    }
+
+    [Fact]
+    public void MapStyleImageMissingEvent_AndProjection_DeserializeFromCompactDto()
+    {
+        var missing = JsonSerializer.Deserialize<MapStyleImageMissingEvent>(
+            """{ "type": "styleimagemissing", "id": "pin" }""",
+            MapLibreJsonSerializer.Options);
+        Assert.Equal("pin", missing!.Id);
+
+        var projection = JsonSerializer.Deserialize<MapProjectionEvent>(
+            """{ "type": "projectiontransition", "newProjection": { "type": "mercator" } }""",
+            MapLibreJsonSerializer.Options);
+        Assert.NotNull(projection!.NewProjection);
+    }
 }

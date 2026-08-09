@@ -1,3 +1,4 @@
+// Sample/experiment GeoportalMapHandle bundle — not used by DP.Geoportal.Web or the examples host.
 // src/events.ts
 function createCompactMapEventDto(e, options) {
   const includeGeometry = options?.includeGeometry === true;
@@ -19,6 +20,9 @@ function createCompactMapEventDto(e, options) {
   const point = e?.["point"];
   const lngLat = e?.["lngLat"];
   const originalEvent = e?.["originalEvent"];
+  const tile = e?.["tile"];
+  const tileId = tile?.["tileID"];
+  const canonical = tileId?.["canonical"];
   return {
     type: e?.["type"] ?? null,
     point: point ? { x: point.x ?? 0, y: point.y ?? 0 } : null,
@@ -32,7 +36,15 @@ function createCompactMapEventDto(e, options) {
       metaKey: !!originalEvent["metaKey"]
     } : null,
     layerId: features?.[0]?.layerId ?? null,
-    features
+    features,
+    dataType: e?.["dataType"] ?? null,
+    isSourceLoaded: e?.["isSourceLoaded"] ?? null,
+    sourceId: e?.["sourceId"] ?? null,
+    sourceDataType: e?.["sourceDataType"] ?? null,
+    sourceDataChanged: e?.["sourceDataChanged"] ?? null,
+    tile: canonical ? { z: canonical.z ?? 0, x: canonical.x ?? 0, y: canonical.y ?? 0 } : tile ?? null,
+    newProjection: e?.["newProjection"] ?? null,
+    id: e?.["id"] ?? null
   };
 }
 
