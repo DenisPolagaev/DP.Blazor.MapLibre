@@ -1,5 +1,17 @@
 import { GeoGrid, detachGeoGrid } from './geogrid/index.js';
 
+function ensureStylesheet() {
+    const href = new URL('geogrid/geogrid.css', import.meta.url).href;
+    if (document.querySelector(`link[href="${href}"]`)) {
+        return;
+    }
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+}
+
 function resolveGridDensity(options) {
     if (options.gridDensityDegrees != null) {
         const density = options.gridDensityDegrees;
@@ -56,6 +68,7 @@ export function add(map, options) {
         throw new Error('GeoGrid plugin requires a map instance.');
     }
 
+    ensureStylesheet();
     detachGeoGrid(map);
     const instance = new GeoGrid({
         map,

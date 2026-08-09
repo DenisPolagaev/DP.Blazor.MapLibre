@@ -55,6 +55,15 @@ function appendScript(src) {
     document.body.appendChild(script);
 }
 
+async function prepareMapLibreGlobal(mapLibreContent) {
+    if (globalThis.maplibregl?.Map) {
+        return;
+    }
+
+    const maplibre = await import(`${mapLibreContent}maplibre-gl/dist/maplibre-gl.mjs`);
+    globalThis.maplibregl = maplibre;
+}
+
 function ensureBlazorHostElements() {
     if (!document.getElementById('app')) {
         const app = document.createElement('div');
@@ -72,7 +81,7 @@ function ensureBlazorHostElements() {
 }
 
 export default {
-    start: () => {
+    start: async () => {
         // Convert docfx relative links before <base>, so navbar/toc links keep working.
         absolutizePageRelativeLinks();
 
@@ -88,7 +97,8 @@ export default {
 
         ensureBlazorHostElements();
 
-        appendScript('_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js');
+        // MapLibre GL JS v6 is ESM-only; expose namespace for plugins that expect window.maplibregl.
+        await prepareMapLibreGlobal(mapLibreContent);
         appendScript('_framework/blazor.webassembly.js');
 
         scheduleLinkFixAfterDocFx();

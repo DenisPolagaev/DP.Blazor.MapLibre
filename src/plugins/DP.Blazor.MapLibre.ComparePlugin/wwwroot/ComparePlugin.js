@@ -95,7 +95,9 @@ async function ensureMapLibreGlobal() {
         return;
     }
 
-    await loadClassicScript('_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js');
+    // MapLibre GL JS v6 is ESM-only; reuse the wrapper's prepare helper.
+    const mapLibre = await getMapLibreModule();
+    await mapLibre.prepareMapLibreGl();
 
     if (!globalThis.maplibregl?.Map) {
         throw new Error('MapLibre GL JS failed to load');

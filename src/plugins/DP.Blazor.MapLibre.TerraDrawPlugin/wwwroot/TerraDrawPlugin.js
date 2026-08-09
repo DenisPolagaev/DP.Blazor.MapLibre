@@ -1,5 +1,19 @@
+const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+
 function contentUrl(relativePath) {
     return new URL(relativePath, document.baseURI).href;
+}
+
+async function ensureMapLibreGlobal() {
+    if (globalThis.maplibregl?.Map) {
+        return;
+    }
+
+    const mapLibre = await import(contentUrl(mapLibreModulePath));
+    await mapLibre.prepareMapLibreGl();
+    if (!globalThis.maplibregl?.Map) {
+        throw new Error('MapLibre GL JS failed to load');
+    }
 }
 
 const scriptBase = contentUrl('_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/');
@@ -50,10 +64,7 @@ async function loadDependencies() {
         return;
     }
 
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS must be loaded before the Terra Draw plugin.');
-    }
-
+    await ensureMapLibreGlobal();
     ensureStylesheet();
     await loadScript(`${scriptBase}maplibre-gl-terradraw.umd.js`);
     dependenciesLoaded = true;

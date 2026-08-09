@@ -10,16 +10,19 @@ The plugin project lives at `src/plugins/DP.Blazor.MapLibre.ComparePlugin`.
 dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj
 ```
 
-Add maplibre-gl and maplibre-gl-compare to your host page **before** Blazor starts, as described in the [maplibre-gl-compare README](https://github.com/maplibre/maplibre-gl-compare):
+Add MapLibre CSS (and optionally compare CSS) to your host page. Do **not** load `maplibre-gl-compare.js` in the host — `InitializeAsync` loads the UMD and attaches it to `window.maplibregl.Compare` (and injects compare CSS if missing):
 
 ```html
 <link href="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
+<!-- Optional: early CSS. ComparePlugin.InitializeAsync also injects this stylesheet. -->
 <link href="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.css" rel="stylesheet" />
-<script src="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.js"></script>
-<script src="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.js"></script>
+<script type="module">
+  import * as maplibregl from './_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs';
+  globalThis.maplibregl = maplibregl;
+</script>
 ```
 
-The plugin can also load these assets dynamically via `InitializeAsync`, but the script-tag order above matches the official compare examples.
+`InitializeAsync` calls `prepareMapLibreGl` for the MapLibre ESM bundle when needed, then loads `maplibre-gl-compare.js`.
 
 ## Usage
 

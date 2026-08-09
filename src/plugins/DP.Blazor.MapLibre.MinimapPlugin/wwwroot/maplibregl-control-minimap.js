@@ -343,7 +343,7 @@ export function registerMinimapControl(maplibregl) {
 
             this._showTrackingRect();
             this._trackingData = createTrackingFeature(cloneCoordinates(this._trackingRectCoordinates));
-            this._trackingRect.setData(this._trackingData);
+            void Promise.resolve(this._trackingRect.setData(this._trackingData));
         },
 
         _applyTrackingRectGeometry(bounds) {

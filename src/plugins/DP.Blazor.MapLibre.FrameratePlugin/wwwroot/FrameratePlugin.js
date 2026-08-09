@@ -1,8 +1,26 @@
 import { registerFramerateControl } from './maplibregl-framerate-control.js';
 
+const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+
 let mapObject = null;
 let framerateControl = null;
 let dependenciesLoaded = false;
+
+function contentUrl(relativePath) {
+    return new URL(relativePath, document.baseURI).href;
+}
+
+async function ensureMapLibreGlobal() {
+    if (globalThis.maplibregl?.Map) {
+        return;
+    }
+
+    const mapLibre = await import(contentUrl(mapLibreModulePath));
+    await mapLibre.prepareMapLibreGl();
+    if (!globalThis.maplibregl?.Map) {
+        throw new Error('MapLibre GL JS failed to load');
+    }
+}
 
 function ensureStylesheet() {
     const href = new URL('FrameratePlugin.css', import.meta.url).href;
@@ -21,10 +39,7 @@ async function loadDependencies() {
         return;
     }
 
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS must be loaded before the framerate plugin.');
-    }
-
+    await ensureMapLibreGlobal();
     ensureStylesheet();
     registerFramerateControl(globalThis.maplibregl);
     dependenciesLoaded = true;

@@ -31,11 +31,15 @@ await listener.Remove(); // calls map.off() in JavaScript
 | `moveend`, camera/drag | `MapMoveEvent` / `MapEvent` | `OnMoveEnd`, `OnDrag*` | No |
 | `data`, `sourcedata`, `sourcedataabort`, `styledataloading`, `sourcedataloading` | `MapDataEvent` | `OnData`, `OnSourceData`, `OnSourceDataAbort`, `OnStyleDataLoading`, `OnSourceDataLoading` | No |
 | `error` | `MapErrorEvent` | `OnError` | No |
-| `styleimagemissing` | `MapStyleImageMissingEvent` | `OnStyleImageMissing` | No |
+| `styleimagemissing` | `MapStyleImageMissingEvent` | `OnStyleImageMissing` (observe only in MapLibre 6+; use `SetMissingStyleImageResolver` to supply images) | No |
 | `render`, `idle` | `MapEvent` | `OnRender`, `OnIdle` | No |
 | `cooperativegestureprevented` | `MapCooperativeGestureEvent` | `OnCooperativeGesturePrevented` | No |
 | `projectiontransition` | `MapProjectionEvent` | `OnProjectionTransition` | No |
 | `terrain` | `MapTerrainEvent` | `OnTerrain` | No |
+
+Aliases (MapLibre 6 naming): `MapSourceDataEvent` / `MapStyleDataEvent` (data events), `MapMovementEvent` (camera), `MapBoxZoomEvent` (boxzoom).
+
+Compact interop DTO includes `dataType`, `sourceId`, `sourceDataType`, `isSourceLoaded`, `tile`, `newProjection`, and missing-image `id` in addition to `type` / `point` / `lngLat` / `features`.
 
 ## Pitfalls
 

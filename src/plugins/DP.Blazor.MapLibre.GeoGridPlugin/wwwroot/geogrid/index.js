@@ -128,13 +128,38 @@ const formatDegrees = (degressFloat) => {
     return output;
 };
 
+function toLngLatLike(value) {
+    if (value && typeof value.lng === 'number' && typeof value.lat === 'number') {
+        return value;
+    }
+    if (Array.isArray(value) && value.length >= 2) {
+        return { lng: value[0], lat: value[1] };
+    }
+    // MapLibre Point from unproject
+    if (value && typeof value.x === 'number') {
+        return value; // already LngLat from unproject
+    }
+    return value;
+}
+
+function isLocationOccluded(map, location) {
+    const transform = map?.transform ?? map?._camera?.transform;
+    if (typeof transform?.isLocationOccluded !== 'function') {
+        return false;
+    }
+    try {
+        return !!transform.isLocationOccluded(toLngLatLike(location));
+    } catch {
+        return false;
+    }
+}
+
 const calculateTopMostNotOcludedLatitude = (map, longitude) => {
     let result = undefined;
     const step = map.getZoom() > 12 ? 0.01 : 1;
     const centerLat = map.getCenter().lat;
     for (let latitude = centerLat; latitude < 85; latitude += step) {
-        // @ts-expect-error
-        const isOccluded = map.transform.isLocationOccluded?.({ lng: longitude, lat: latitude });
+        const isOccluded = isLocationOccluded(map, { lng: longitude, lat: latitude });
         if (!isOccluded) {
             result = latitude;
         }
@@ -146,8 +171,7 @@ const calculateLeftMostNotOcludedLongitude = (map, latitude) => {
     const step = 0.5;
     const centerLng = map.getCenter().lng;
     for (let longitude = centerLng; longitude > centerLng - 90; longitude -= step) {
-        // @ts-expect-error
-        const isOccluded = map.transform.isLocationOccluded?.({ lng: longitude, lat: latitude });
+        const isOccluded = isLocationOccluded(map, { lng: longitude, lat: latitude });
         if (!isOccluded) {
             result = longitude;
         }
@@ -159,8 +183,7 @@ const calculateRightMostNotOccludedLongitude = (map, latitude) => {
     const step = 0.5;
     const centerLng = map.getCenter().lng;
     for (let longitude = centerLng; longitude < centerLng + 90; longitude += step) {
-        // @ts-expect-error
-        const isOccluded = map.transform.isLocationOccluded({ lng: longitude, lat: latitude });
+        const isOccluded = isLocationOccluded(map, { lng: longitude, lat: latitude });
         if (!isOccluded) {
             result = longitude;
         }
@@ -172,8 +195,7 @@ const calculateBottomMostNotOcludedLatitude = (map, longitude) => {
     const step = map.getZoom() > 12 ? 0.01 : 1;
     const centerLat = map.getCenter().lat;
     for (let latitude = centerLat; latitude > -85; latitude -= step) {
-        // @ts-expect-error
-        const isOccluded = map.transform.isLocationOccluded?.({ lng: longitude, lat: latitude });
+        const isOccluded = isLocationOccluded(map, { lng: longitude, lat: latitude });
         if (!isOccluded) {
             result = latitude;
         }
@@ -295,7 +317,7 @@ class GeoGrid {
         if (!this.map.getLayer(this.config.parallersLayerName)) {
             this.addLayersAndSources(densityInDegrees);
         } else {
-            this.refresh(densityInDegrees);
+            void this.refresh(densityInDegrees).catch(() => {});
         }
     };
     /**
@@ -371,10 +393,10 @@ class GeoGrid {
                 Math.max(Math.floor(this.map.getZoom()), 0));
             const rebuildLabelsNow = this._pendingRebuildLabels || densityInDegrees !== this._lastDensity;
             this._pendingRebuildLabels = false;
-            this.refresh(densityInDegrees, { rebuildLabels: rebuildLabelsNow });
+            void this.refresh(densityInDegrees, { rebuildLabels: rebuildLabelsNow }).catch(() => {});
         });
     };
-    refresh = (densityInDegrees, { rebuildLabels = true } = {}) => {
+    refresh = async (densityInDegrees, { rebuildLabels = true } = {}) => {
         if (typeof this.map.isStyleLoaded === 'function' && !this.map.isStyleLoaded()) {
             return;
         }
@@ -386,7 +408,7 @@ class GeoGrid {
             return;
         }
 
-        this.updateGrid(densityInDegrees);
+        await this.updateGrid(densityInDegrees);
 
         if (rebuildLabels) {
             this.removeLabels();
@@ -434,7 +456,7 @@ class GeoGrid {
         }
 
         if (this.hasGridLayersAndSources()) {
-            this.updateGrid(densityInDegrees);
+            void this.updateGrid(densityInDegrees).catch(() => {});
             this.drawLabels(densityInDegrees);
             return;
         }
@@ -544,7 +566,7 @@ class GeoGrid {
             }
         }
     };
-    updateGrid = (densityInDegrees) => {
+    updateGrid = async (densityInDegrees) => {
         const parallersSource = this.map.getSource(this.config.parallersSourceName);
         const meridiansSource = this.map.getSource(this.config.meridiansSourceName);
 
@@ -553,8 +575,10 @@ class GeoGrid {
         }
 
         const bounds = this.map.getBounds();
-        parallersSource.setData(createMultiLineString(createParallelsGeometry(densityInDegrees, bounds)));
-        meridiansSource.setData(createMultiLineString(createMeridiansGeometry(densityInDegrees, bounds)));
+        await Promise.all([
+            Promise.resolve(parallersSource.setData(createMultiLineString(createParallelsGeometry(densityInDegrees, bounds)))),
+            Promise.resolve(meridiansSource.setData(createMultiLineString(createMeridiansGeometry(densityInDegrees, bounds)))),
+        ]);
     };
     updateLabelsVisibility = () => {
         const isFacingNorth = Math.abs(this.map.getBearing()) === 0;
@@ -575,8 +599,7 @@ class GeoGrid {
             return;
         }
         const x = this.map.project([currentLongitude, bounds.getSouth()]).x;
-        // @ts-expect-error
-        const isBottomYOccluded = this.map.transform.isLocationOccluded?.(this.map.unproject([x, this.map.getCanvas().offsetHeight]));
+        const isBottomYOccluded = isLocationOccluded(this.map, this.map.unproject([x, this.map.getCanvas().offsetHeight]));
         if (isBottomYOccluded) {
             return;
         }
@@ -593,8 +616,7 @@ class GeoGrid {
             return;
         }
         const x = this.map.project([currentLongitude, bounds.getNorth()]).x;
-        // @ts-expect-error
-        const isTopYOccluded = this.map.transform.isLocationOccluded?.(this.map.unproject([x, 0]));
+        const isTopYOccluded = isLocationOccluded(this.map, this.map.unproject([x, 0]));
         if (isTopYOccluded) {
             return;
         }
