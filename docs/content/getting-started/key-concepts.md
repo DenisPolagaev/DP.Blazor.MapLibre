@@ -1,34 +1,32 @@
 # Key concepts
 
-Blazor.MapLibre enables .NET developers to create sophisticated mapping experiences without leaving the comfort of C# and the Blazor ecosystem.
-
-Blazor.MapLibre is a comprehensive Blazor component library that provides a C# wrapper around the core [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) JavaScript library. It enables .NET developers to integrate powerful, interactive mapping capabilities into their Blazor applications using familiar C# syntax and component patterns.
+**DP.Blazor.MapLibre** is a Blazor component library: a typed C# wrapper around [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/). You configure maps with familiar Blazor parameters and call map APIs from .NET instead of wiring every JS interop call by hand.
 
 ## MapLibre GL JS wrapper
 
-At its foundation, Blazor.MapLibre wraps the powerful MapLibre GL JS library, which is:
+Under the hood the library talks to MapLibre GL JS, which is:
 
 - An open-source JavaScript library for interactive, customizable maps
 - Capable of rendering vector tiles and custom styling
-- Highly performant with WebGL rendering
+- Highly performant with WebGL2 rendering
 - A community-maintained fork of Mapbox GL JS
 
-The wrapper provides a seamless bridge between .NET code and the underlying JavaScript functionality, abstracting away the complexities of JavaScript interop.
+The wrapper serializes options and style objects, loads the ESM bundle + worker, and exposes async C# methods that map to the JS API. When a call is not wrapped yet, use `NativeMap` for a raw `maplibregl.Map` handle.
 
 ## Blazor component
 
-Blazor.MapLibre follows Blazor's component-based architecture and makes the `MapLibre` component available to app authors.
+The main entry point is the `MapLibre` component:
 
-- Encapsulates map functionality in reusable Blazor components
-- Provides strong typing and IntelliSense support for all MapLibre features
-- Integrates with Blazor's rendering and lifecycle management
-- Enables declarative map configuration through component parameters
+- Encapsulates map lifetime (init, style load, dispose) in one Razor component
+- Provides strong typing and IntelliSense for sources, layers, camera, and related models
+- Integrates with Blazor rendering and `IAsyncDisposable`
+- Supports declarative setup via parameters (`Options`, `Width` / `Height`, `OnLoad`, `OnStyleLoad`, …)
 
 ## Default map style
 
 `MapOptions.Style` defaults to `MapStyles.OpenStreetMap` (OSM raster tiles). Override it when you need vector styles or custom tile servers.
 
-See [Map API methods](../api/map/methods.md) for recently added wrappers (terrain, GeoJSON diff, time control, custom layers).
+See [Map API methods](../api/map/methods.md) for wrappers such as terrain, GeoJSON diff, time control, and custom layers.
 
 ## Layers and events
 
@@ -36,10 +34,10 @@ Typed layer models mirror the [MapLibre style spec](https://maplibre.org/maplibr
 
 ## Plugin system
 
-The library features an extensible plugin system.
+Optional features ship as separate packages that implement `IMapLibrePlugin` (or inherit `MapLibrePluginBase`):
 
-- Allows for modular extension of core functionality
-- Provides a standardized way to extend maps with specialized features
-- Maintains a clean separation between core library and optional extensions
+- Modular extension without bloating the core NuGet package
+- Standard register / attach / detach / dispose lifecycle on the map
+- Clean split between core library and draw, compare, minimap, and similar tools
 
-See the [Plugins](../plugins/index.md) section for [creating a plugin](../plugins/create-a-plugin.md) and the built-in plugin packages (Terra Draw, Map Compare, Minimap, Frame rate, Geo grid, and the Mapbox GL Draw reference implementation).
+See [Plugins](../plugins/index.md), [Creating a plugin](../plugins/create-a-plugin.md), and the built-in packages (Terra Draw, Map Compare, Minimap, Frame rate, Geo grid, plus the Mapbox GL Draw reference in the examples project).
