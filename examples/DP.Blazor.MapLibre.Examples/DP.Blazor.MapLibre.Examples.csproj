@@ -21,6 +21,7 @@
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.MinimapPlugin\DP.Blazor.MapLibre.MinimapPlugin.csproj"/>
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.FrameratePlugin\DP.Blazor.MapLibre.FrameratePlugin.csproj"/>
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.GeoGridPlugin\DP.Blazor.MapLibre.GeoGridPlugin.csproj"/>
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.StarfieldPlugin\DP.Blazor.MapLibre.StarfieldPlugin.csproj"/>
     </ItemGroup>
     <ItemGroup>
       <_ContentIncludedByDefault Remove="wwwroot\sample-data\weather.json" />

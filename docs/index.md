@@ -40,6 +40,7 @@ dotnet add package DP.Blazor.MapLibre.ComparePlugin
 dotnet add package DP.Blazor.MapLibre.MinimapPlugin
 dotnet add package DP.Blazor.MapLibre.FrameratePlugin
 dotnet add package DP.Blazor.MapLibre.GeoGridPlugin
+dotnet add package DP.Blazor.MapLibre.StarfieldPlugin
 ```
 
 Add MapLibre CSS in your app head (or layout):
@@ -104,6 +105,7 @@ Core stays lean; specialized UI and tools live in plugins that implement `IMapLi
 | Minimap | `DP.Blazor.MapLibre.MinimapPlugin` |
 | Frame rate | `DP.Blazor.MapLibre.FrameratePlugin` |
 | Geo grid | `DP.Blazor.MapLibre.GeoGridPlugin` |
+| Starfield | `DP.Blazor.MapLibre.StarfieldPlugin` |
 
 Details, lifecycle notes, and how to write your own: [Plugins](content/plugins/index.md).
 

@@ -4,4 +4,5 @@ map-compare
 minimap
 framerate
 geogrid
+starfield
 mapbox-gl-draw

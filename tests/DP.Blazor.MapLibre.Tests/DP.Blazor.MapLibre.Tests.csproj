@@ -27,6 +27,7 @@
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.MinimapPlugin\DP.Blazor.MapLibre.MinimapPlugin.csproj" />
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.FrameratePlugin\DP.Blazor.MapLibre.FrameratePlugin.csproj" />
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.TerraDrawPlugin\DP.Blazor.MapLibre.TerraDrawPlugin.csproj" />
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.StarfieldPlugin\DP.Blazor.MapLibre.StarfieldPlugin.csproj" />
     </ItemGroup>
 
 </Project>

@@ -5,6 +5,7 @@ namespace DP.Blazor.MapLibre.Models;
 /// </summary>
 public class WebGLContextAttributes
 {
+    public bool? Alpha { get; set; }
     public bool? Antialias { get; set; }
     public string PowerPreference { get; set; } = "high-performance";
     public bool? PreserveDrawingBuffer { get; set; }

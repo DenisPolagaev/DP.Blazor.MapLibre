@@ -1,0 +1,105 @@
+@page "/examples/starfield"
+
+@using DP.Blazor.MapLibre.Models
+@using DP.Blazor.MapLibre.Models.Style
+@using DP.Blazor.MapLibre.StarfieldPlugin
+@implements IAsyncDisposable
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/Starfield.razor"/>
+
+<p class="text-muted">
+  SVG starfield and atmospheric glow behind a globe map, wrapping
+  <a href="https://github.com/markmclaren/maplibre-gl-starfield" target="_blank" rel="noopener">maplibre-gl-starfield</a>.
+  Pan or zoom to see parallax stars and the corona around Earth.
+</p>
+
+<div class="maplibre-starfield-demo rounded-top" style="position: relative; height: 600px; overflow: hidden;">
+    <MapLibre @ref="_map"
+              Options="_mapOptions"
+              OnStyleLoad="OnStyleLoad"
+              Height="100%"
+              Width="100%">
+    </MapLibre>
+</div>
+
+<div class="form-check mt-3">
+    <input class="form-check-input" type="checkbox" id="starfieldToggle" checked="@_starfieldVisible" @onchange="ToggleStarfieldAsync" />
+    <label class="form-check-label" for="starfieldToggle">Show starfield</label>
+</div>
+
+@code {
+    private MapLibre _map = new();
+    private readonly StarfieldPlugin _starfield = new();
+    private bool _starfieldVisible = true;
+    private bool _pendingAttach;
+    private bool _styleReady;
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = ExampleMapStyles.GlobeSatellite,
+        Center = new LngLat(90.999335, 48.489013),
+        Zoom = 1.8,
+        AttributionControl = false,
+    };
+
+    private static readonly StarfieldOptions DefaultOptions = new()
+    {
+        StarCount = 1200,
+        GlowIntensity = 1.0,
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _map.RegisterPlugin(_starfield);
+
+            if (_pendingAttach)
+            {
+                await AttachIfVisibleAsync();
+            }
+        }
+    }
+
+    private async Task OnStyleLoad(EventArgs _)
+    {
+        _styleReady = true;
+        await _map.SetProjection(new ProjectionSpecification { Type = "globe" });
+
+        if (!_starfield.IsInitialized)
+        {
+            _pendingAttach = true;
+            return;
+        }
+
+        await AttachIfVisibleAsync();
+    }
+
+    private async Task AttachIfVisibleAsync()
+    {
+        _pendingAttach = false;
+
+        if (!_starfieldVisible || !_styleReady)
+        {
+            return;
+        }
+
+        await _starfield.AttachAsync(DefaultOptions);
+    }
+
+    private async Task ToggleStarfieldAsync(ChangeEventArgs args)
+    {
+        _starfieldVisible = args.Value is bool visible && visible;
+
+        if (_starfieldVisible)
+        {
+            await _starfield.AttachAsync(DefaultOptions);
+        }
+        else
+        {
+            await _starfield.DetachAsync();
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await _starfield.DisposeAsync();
+}

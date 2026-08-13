@@ -40,4 +40,4 @@ Optional features ship as separate packages that implement `IMapLibrePlugin` (or
 - Standard register / attach / detach / dispose lifecycle on the map
 - Clean split between core library and draw, compare, minimap, and similar tools
 
-See [Plugins](../plugins/index.md), [Creating a plugin](../plugins/create-a-plugin.md), and the built-in packages (Terra Draw, Map Compare, Minimap, Frame rate, Geo grid, plus the Mapbox GL Draw reference in the examples project).
+See [Plugins](../plugins/index.md), [Creating a plugin](../plugins/create-a-plugin.md), and the built-in packages (Terra Draw, Map Compare, Minimap, Frame rate, Geo grid, Starfield, plus the Mapbox GL Draw reference in the examples project).

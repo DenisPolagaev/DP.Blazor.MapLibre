@@ -25,6 +25,7 @@
     <Project Path="src\plugins\DP.Blazor.MapLibre.MinimapPlugin\DP.Blazor.MapLibre.MinimapPlugin.csproj" Type="Classic C#" />
     <Project Path="src\plugins\DP.Blazor.MapLibre.FrameratePlugin\DP.Blazor.MapLibre.FrameratePlugin.csproj" Type="Classic C#" />
     <Project Path="src\plugins\DP.Blazor.MapLibre.GeoGridPlugin\DP.Blazor.MapLibre.GeoGridPlugin.csproj" Type="Classic C#" />
+    <Project Path="src\plugins\DP.Blazor.MapLibre.StarfieldPlugin\DP.Blazor.MapLibre.StarfieldPlugin.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests\DP.Blazor.MapLibre.Tests\DP.Blazor.MapLibre.Tests.csproj" Type="Classic C#" />

@@ -1,0 +1,11 @@
+THIRD-PARTY NOTICES
+===================
+
+This package vendors and adapts JavaScript from:
+
+  maplibre-gl-starfield
+  https://github.com/markmclaren/maplibre-gl-starfield
+  Copyright (c) 2025 Mark McLaren
+  License: MIT
+
+The MIT License text from that project applies to the vendored sources under wwwroot/.

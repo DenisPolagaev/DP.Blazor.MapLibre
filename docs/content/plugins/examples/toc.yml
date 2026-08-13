@@ -11,5 +11,7 @@
   href: framerate.md
 - name: Geo grid
   href: geogrid.md
+- name: Starfield
+  href: starfield.md
 - name: Mapbox GL Draw
   href: mapbox-gl-draw.md

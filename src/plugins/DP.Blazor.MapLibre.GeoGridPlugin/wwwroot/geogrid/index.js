@@ -42,6 +42,26 @@ const createMeridiansGeometry = (densityInDegrees, bounds) => {
     return geometry;
 };
 
+/**
+ * Expand geographic bounds so a short pan/zoom can reuse geometry without setData every frame.
+ * @param {maplibregl.LngLatBounds} bounds
+ * @param {number} factor fraction of span to pad on each side
+ */
+const padBounds = (bounds, factor = 0.75) => {
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+    const south = bounds.getSouth();
+    const north = bounds.getNorth();
+    const lngPad = Math.max((east - west) * factor, 1);
+    const latPad = Math.max((north - south) * factor, 1);
+    return {
+        getWest: () => west - lngPad,
+        getEast: () => east + lngPad,
+        getSouth: () => Math.max(south - latPad, MIN_LATTITUDE),
+        getNorth: () => Math.min(north + latPad, MAX_LATTITUDE),
+    };
+};
+
 const createLabelsContainerElement = () => {
     const el = document.createElement('div');
     el.classList.add(classnames.container, classnames.containerOverride);
@@ -269,6 +289,7 @@ class GeoGrid {
     _isMoving = false;
     _lastDensity = null;
     _pendingRebuildLabels = false;
+    _pendingUpdateGeometry = false;
     constructor(options) {
         if (!options.map) {
             throw new Error('GeoGrid: "map" option is required');
@@ -302,9 +323,10 @@ class GeoGrid {
 
         if (!mapContainer.contains(this.elements.labelsContainer)) {
             mapContainer.appendChild(this.elements.labelsContainer);
-            // moveend: full rebuild after gesture. move: cheap rAF-throttled updates only.
+            // Geometry/labels refresh on moveend (and density change on zoom) —
+            // per-frame setData during pan was the main lag source.
             this.map.on('movestart', this.onMoveStart);
-            this.map.on('move', this.onMove);
+            this.map.on('zoom', this.onZoom);
             this.map.on('moveend', this.onMoveEnd);
             this.map.on('remove', this.removeEventListeners);
             this.map.on('projectiontransition', this.onProjectionTransition);
@@ -356,7 +378,7 @@ class GeoGrid {
 
         try {
             this.map.off('movestart', this.onMoveStart);
-            this.map.off('move', this.onMove);
+            this.map.off('zoom', this.onZoom);
             this.map.off('moveend', this.onMoveEnd);
             this.map.off('projectiontransition', this.onProjectionTransition);
         } catch {
@@ -370,33 +392,54 @@ class GeoGrid {
     };
     onMoveStart = () => {
         this._isMoving = true;
+        // Hide edge labels while gesturing — they would be stale without per-frame work.
+        if (this.elements.labelsContainer) {
+            this.elements.labelsContainer.style.visibility = 'hidden';
+        }
     };
     onMoveEnd = () => {
         this._isMoving = false;
-        this.scheduleRefresh({ rebuildLabels: true });
+        if (this.elements.labelsContainer) {
+            this.elements.labelsContainer.style.visibility = '';
+        }
+        this.scheduleRefresh({ rebuildLabels: true, updateGeometry: true });
     };
-    onMove = () => {
-        // Throttle to one update per frame. Skip label DOM rebuild while gesturing —
-        // that was the main cost (innerHTML clear + recreate on every move event).
-        this.scheduleRefresh({ rebuildLabels: false });
-    };
-    scheduleRefresh = ({ rebuildLabels }) => {
-        if (this._moveRafId) {
-            this._pendingRebuildLabels = this._pendingRebuildLabels || rebuildLabels;
+    onZoom = () => {
+        // Only push geometry mid-gesture when density steps change (pinch-zoom).
+        if (!this._isMoving) {
             return;
         }
 
-        this._pendingRebuildLabels = rebuildLabels;
+        const densityInDegrees = this.config.gridDensity(
+            Math.max(Math.floor(this.map.getZoom()), 0));
+        if (densityInDegrees !== this._lastDensity) {
+            this.scheduleRefresh({ rebuildLabels: false, updateGeometry: true });
+        }
+    };
+    scheduleRefresh = ({ rebuildLabels = false, updateGeometry = false } = {}) => {
+        this._pendingRebuildLabels = this._pendingRebuildLabels || rebuildLabels;
+        this._pendingUpdateGeometry = this._pendingUpdateGeometry || updateGeometry;
+
+        if (this._moveRafId) {
+            return;
+        }
+
         this._moveRafId = requestAnimationFrame(() => {
             this._moveRafId = 0;
             const densityInDegrees = this.config.gridDensity(
                 Math.max(Math.floor(this.map.getZoom()), 0));
-            const rebuildLabelsNow = this._pendingRebuildLabels || densityInDegrees !== this._lastDensity;
+            const densityChanged = densityInDegrees !== this._lastDensity;
+            const rebuildLabelsNow = this._pendingRebuildLabels || densityChanged;
+            const updateGeometryNow = this._pendingUpdateGeometry || densityChanged;
             this._pendingRebuildLabels = false;
-            void this.refresh(densityInDegrees, { rebuildLabels: rebuildLabelsNow }).catch(() => {});
+            this._pendingUpdateGeometry = false;
+            void this.refresh(densityInDegrees, {
+                rebuildLabels: rebuildLabelsNow,
+                updateGeometry: updateGeometryNow,
+            }).catch(() => {});
         });
     };
-    refresh = async (densityInDegrees, { rebuildLabels = true } = {}) => {
+    refresh = async (densityInDegrees, { rebuildLabels = true, updateGeometry = true } = {}) => {
         if (typeof this.map.isStyleLoaded === 'function' && !this.map.isStyleLoaded()) {
             return;
         }
@@ -408,7 +451,9 @@ class GeoGrid {
             return;
         }
 
-        await this.updateGrid(densityInDegrees);
+        if (updateGeometry) {
+            await this.updateGrid(densityInDegrees);
+        }
 
         if (rebuildLabels) {
             this.removeLabels();
@@ -418,7 +463,10 @@ class GeoGrid {
         this._lastDensity = densityInDegrees;
     };
     onProjectionTransition = () => {
-        this.map.once('idle', () => this.scheduleRefresh({ forceLabels: true }));
+        this.map.once('idle', () => this.scheduleRefresh({
+            rebuildLabels: true,
+            updateGeometry: true,
+        }));
     };
     hasGridLayersAndSources = () =>
         !!this.map.getLayer(this.config.parallersLayerName)
@@ -463,7 +511,7 @@ class GeoGrid {
 
         this.removeGridLayersAndSources();
 
-        const bounds = this.map.getBounds();
+        const bounds = padBounds(this.map.getBounds(), 0.75);
         const filter = [
             'all',
             ['>=', ['zoom'], this.config.zoomLevelRange[0]],
@@ -509,7 +557,8 @@ class GeoGrid {
     };
     drawLabels = (densityInDegrees) => {
         const currentZoomLevel = Math.floor(this.map.getZoom());
-        const isInZoomLevelRange = currentZoomLevel >= this.config.zoomLevelRange[0] || currentZoomLevel <= this.config.zoomLevelRange[1];
+        const isInZoomLevelRange = currentZoomLevel >= this.config.zoomLevelRange[0]
+            && currentZoomLevel <= this.config.zoomLevelRange[1];
         if (!isInZoomLevelRange) {
             return;
         }
@@ -574,7 +623,7 @@ class GeoGrid {
             return;
         }
 
-        const bounds = this.map.getBounds();
+        const bounds = padBounds(this.map.getBounds(), 0.75);
         await Promise.all([
             Promise.resolve(parallersSource.setData(createMultiLineString(createParallelsGeometry(densityInDegrees, bounds)))),
             Promise.resolve(meridiansSource.setData(createMultiLineString(createMeridiansGeometry(densityInDegrees, bounds)))),

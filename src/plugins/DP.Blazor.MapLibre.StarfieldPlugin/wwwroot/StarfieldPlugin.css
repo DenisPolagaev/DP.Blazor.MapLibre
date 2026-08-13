@@ -1,0 +1,33 @@
+/* Backdrop host for MapLibreStarryBackground layers (behind the map canvas). */
+.maplibre-starfield-host {
+    background-color: #0a192f;
+}
+
+.maplibre-starfield-layer,
+.maplibre-starfield-glow {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    contain: strict;
+}
+
+.maplibre-starfield-layer {
+    z-index: 1;
+}
+
+.maplibre-starfield-glow {
+    z-index: 2;
+}
+
+/* Soft limb glow must composite over transparent globe exterior */
+.maplibre-starfield-glow svg {
+    overflow: visible;
+}
+
+.maplibre-starfield-glow .globe-glow,
+.maplibre-starfield-glow .corona-ring {
+    mix-blend-mode: screen;
+}

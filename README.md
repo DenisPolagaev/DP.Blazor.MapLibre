@@ -36,6 +36,7 @@ dotnet add package DP.Blazor.MapLibre.ComparePlugin
 dotnet add package DP.Blazor.MapLibre.MinimapPlugin
 dotnet add package DP.Blazor.MapLibre.FrameratePlugin
 dotnet add package DP.Blazor.MapLibre.GeoGridPlugin
+dotnet add package DP.Blazor.MapLibre.StarfieldPlugin
 ```
 
 Add MapLibre CSS in your app:

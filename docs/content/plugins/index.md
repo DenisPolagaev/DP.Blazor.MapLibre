@@ -19,6 +19,7 @@ For architecture context, see [Key concepts — Plugin system](../getting-starte
 | [Minimap](./minimap-plugin.md) | `DP.Blazor.MapLibre.MinimapPlugin` | Overview map with viewport rectangle ([mapboxgl-minimap](https://github.com/aesqe/mapboxgl-minimap)) |
 | [Frame rate](./framerate-plugin.md) | `DP.Blazor.MapLibre.FrameratePlugin` | Live FPS overlay while the map moves ([mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate)) |
 | [Geo grid](./geogrid-plugin.md) | `DP.Blazor.MapLibre.GeoGridPlugin` | Geographic graticule with coordinate labels ([geogrid-maplibre-gl](https://github.com/falseinput/geogrid-maplibre-gl)) |
+| [Starfield](./starfield-plugin.md) | `DP.Blazor.MapLibre.StarfieldPlugin` | SVG starfield and globe glow ([maplibre-gl-starfield](https://github.com/markmclaren/maplibre-gl-starfield)) |
 | [Mapbox GL Draw](./mapbox-gl-draw-plugin.md) | `DP.Blazor.MapLibre.Examples.MapboxGlPlugin` | Reference plugin using [Mapbox GL Draw](https://github.com/mapbox/mapbox-gl-draw) (examples project) |
 
 ## Live examples

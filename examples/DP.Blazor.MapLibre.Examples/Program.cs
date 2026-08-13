@@ -34,5 +34,6 @@ builder.RootComponents.RegisterCustomElement<ColorReliefTerrain>("color-relief-t
 builder.RootComponents.RegisterCustomElement<Minimap>("map-minimap");
 builder.RootComponents.RegisterCustomElement<Framerate>("map-framerate");
 builder.RootComponents.RegisterCustomElement<GeoGrid>("map-geogrid");
+builder.RootComponents.RegisterCustomElement<Starfield>("map-starfield");
 
 await builder.Build().RunAsync();

@@ -2,6 +2,7 @@ using System.Text.Json;
 using DP.Blazor.MapLibre.FrameratePlugin;
 using DP.Blazor.MapLibre.MinimapPlugin;
 using DP.Blazor.MapLibre.Models;
+using DP.Blazor.MapLibre.StarfieldPlugin;
 using DP.Blazor.MapLibre.TerraDrawPlugin;
 using Xunit;
 
@@ -61,6 +62,51 @@ public sealed class PluginControlOptionsTests
         Assert.Contains("\"graphHeight\":60", json);
         Assert.Contains("\"graphWidth\":90", json);
         Assert.Contains("\"width\":100", json);
+    }
+
+    [Fact]
+    public void StarfieldOptions_SerializesExpectedJsonShape()
+    {
+        var options = new StarfieldOptions
+        {
+            StarCount = 1200,
+            GlowIntensity = 0.85,
+            StarfieldContainerId = "stars",
+            GlowContainerId = "glow",
+            GlowColors = new StarfieldGlowColors
+            {
+                Inner = "rgba(120, 180, 255, 0.9)",
+                Middle = "rgba(100, 150, 255, 0.7)",
+                Outer = "rgba(70, 120, 255, 0.4)",
+                Fade = "rgba(40, 80, 220, 0)",
+            },
+        };
+
+        var json = JsonSerializer.Serialize(options);
+
+        Assert.Contains("\"starCount\":1200", json);
+        Assert.Contains("\"glowIntensity\":0.85", json);
+        Assert.Contains("\"starfieldContainerId\":\"stars\"", json);
+        Assert.Contains("\"glowContainerId\":\"glow\"", json);
+        Assert.Contains("\"glowColors\":", json);
+        Assert.Contains("\"inner\":\"rgba(120, 180, 255, 0.9)\"", json);
+        Assert.Contains("\"fade\":\"rgba(40, 80, 220, 0)\"", json);
+    }
+
+    [Fact]
+    public void StarfieldOptions_OmitsNullProperties()
+    {
+        var options = new StarfieldOptions
+        {
+            StarCount = 500,
+        };
+
+        var json = JsonSerializer.Serialize(options);
+
+        Assert.Contains("\"starCount\":500", json);
+        Assert.DoesNotContain("glowIntensity", json);
+        Assert.DoesNotContain("starfieldContainerId", json);
+        Assert.DoesNotContain("glowColors", json);
     }
 
     [Fact]
