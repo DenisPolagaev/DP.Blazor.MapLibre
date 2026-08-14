@@ -1141,6 +1141,20 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Adds a layer when missing; otherwise updates zoom range and optional order.
+    /// </summary>
+    public async ValueTask EnsureLayer(Layer layer, string? beforeId = null)
+    {
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("ensureLayer", layer, beforeId);
+            return;
+        }
+
+        await _jsModule.InvokeVoidAsync("ensureLayer", JsContainerId, layer, beforeId);
+    }
+
+    /// <summary>
     /// Adds a source to the map with the specified identifier and source object.
     /// </summary>
     /// <param name="id">A unique identifier for the source.</param>

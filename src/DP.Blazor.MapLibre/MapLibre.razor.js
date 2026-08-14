@@ -850,6 +850,28 @@ export function addLayer(container, layer, beforeId) {
 }
 
 /**
+ * Adds a layer when missing; otherwise updates min/max zoom and optional order.
+ * Uses only public MapLibre APIs (getLayer / addLayer / setLayerZoomRange / moveLayer).
+ */
+export function ensureLayer(container, layer, beforeId) {
+    const map = mapInstances[container];
+    if (!map.getLayer(layer.id)) {
+        addLayer(container, layer, beforeId);
+        return "added";
+    }
+
+    if (layer.minzoom != null || layer.maxzoom != null) {
+        setLayerZoomRange(container, layer.id, layer.minzoom ?? 0, layer.maxzoom ?? 24);
+    }
+
+    if (beforeId) {
+        moveLayer(container, layer.id, beforeId);
+    }
+
+    return "updated";
+}
+
+/**
  * Adds a new source to the specified map container instance.
  *
  * @param {string} container - The identifier for the map container instance.
@@ -2358,51 +2380,6 @@ export function getLifecycleDiagnostics() {
 }
 
 /**
- * Returns a lightweight typed handle facade over an existing map instance.
- * Useful for JS-side Geoportal integrations and diagnostics.
- * @param {string} container
- */
-export function createGeoportalMapHandle(container) {
-    const map = requireMap(container, 'createGeoportalMapHandle');
-    const disposers = new Set();
-    let disposed = false;
-
-    return {
-        id: container,
-        native: map,
-        applyViewState(state) {
-            applyViewState(container, state);
-        },
-        getViewState() {
-            return getViewState(container);
-        },
-        async setGeoJson(sourceId, data) {
-            const source = map.getSource(sourceId);
-            if (!source || typeof source.setData !== 'function') {
-                throw new Error(`Source '${sourceId}' is not a GeoJSON source.`);
-            }
-            await source.setData(cutAntiMeridian(container, data));
-        },
-        async getClusterLeaves(sourceId, clusterId, limit = 10, offset = 0) {
-            return await getClusterLeaves(container, sourceId, clusterId, limit, offset);
-        },
-        async getClusterChildren(sourceId, clusterId) {
-            return await getClusterChildren(container, sourceId, clusterId);
-        },
-        dispose() {
-            if (disposed) {
-                return;
-            }
-            disposed = true;
-            for (const dispose of [...disposers]) {
-                try { dispose(); } catch { /* ignore */ }
-            }
-            disposers.clear();
-        }
-    };
-}
-
-/**
  * Removes a control from the map.
  * @param {string} container - The map container.
  * @param {IControl} control - The control to remove.
@@ -3305,6 +3282,9 @@ export async function executeTransaction(container, data) {
                 break;
             case "addLayer":
                 addLayer(container, d.data[0], d.data[1]);
+                break;
+            case "ensureLayer":
+                ensureLayer(container, d.data[0], d.data[1]);
                 break;
             case "addSource":
                 addSource(container, d.data[0], d.data[1]);
