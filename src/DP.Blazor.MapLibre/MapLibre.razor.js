@@ -926,10 +926,13 @@ export function setSourceTiles(container, id, tiles) {
 }
 
 /**
- * Adds a tile source when missing; otherwise updates tiles in place via setTiles.
+ * Adds a tile source when missing; otherwise updates it with MapLibre public APIs only.
+ * Native RasterTileSource/VectorTileSource expose setTiles (and setUrl), not setBounds.
+ * bounds / minzoom / maxzoom / tileSize take effect only in the addSource specification,
+ * so those changes recreate the source via removeLayer → removeSource → addSource → addLayer.
  * @param {string} container
  * @param {string} id
- * @param {object} source - Source specification that includes tiles (and type for add).
+ * @param {object} source - MapLibre SourceSpecification (type, tiles, bounds, …).
  * @returns {"added"|"updated"}
  */
 export function upsertTileSource(container, id, source) {
@@ -948,36 +951,56 @@ export function upsertTileSource(container, id, source) {
         throw new Error(`upsertTileSource requires source.tiles for id "${id}".`);
     }
 
+    const current = typeof existing.serialize === "function" ? existing.serialize() : {};
+    if (tileSourceSpecNeedsReplace(current, source)) {
+        replaceTileSource(map, id, source);
+        return "updated";
+    }
+
     existing.setTiles(source.tiles);
-
-    // setTiles alone leaves minzoom/maxzoom from the original addSource call.
-    // Weather/vegetation overzoom (e.g. maxzoom 5) never took effect on updates —
-    // MapLibre kept requesting tiles up to the old maxzoom and lagged on every zoom step.
-    let zoomRangeChanged = false;
-    if (source.minzoom != null && existing.minzoom !== source.minzoom) {
-        existing.minzoom = source.minzoom;
-        zoomRangeChanged = true;
-    }
-    if (source.maxzoom != null && existing.maxzoom !== source.maxzoom) {
-        existing.maxzoom = source.maxzoom;
-        zoomRangeChanged = true;
-    }
-
-    if (zoomRangeChanged) {
-        // MapLibre GL JS v6: style.sourceCaches / map.transform were removed; use tileManagers.
-        const tileManager = map.style?.tileManagers?.[id];
-        if (tileManager && typeof tileManager.clearTiles === 'function') {
-            tileManager.clearTiles();
-        } else if (typeof existing.load === 'function') {
-            existing.load();
-        }
-
-        if (typeof map.triggerRepaint === 'function') {
-            map.triggerRepaint();
-        }
-    }
-
     return "updated";
+}
+
+function tileSourceSpecNeedsReplace(current, next) {
+    return !sameSourceField(next.minzoom, current.minzoom)
+        || !sameSourceField(next.maxzoom, current.maxzoom)
+        || !sameSourceField(next.tileSize, current.tileSize)
+        || !sameSourceField(next.scheme, current.scheme)
+        || !sameSourceField(next.url, current.url)
+        || !sameSourceField(next.promoteId, current.promoteId)
+        || !sameSourceField(next.bounds, current.bounds);
+}
+
+function sameSourceField(next, current) {
+    if (next == null) {
+        return true;
+    }
+
+    return JSON.stringify(next) === JSON.stringify(current);
+}
+
+function replaceTileSource(map, id, source) {
+    const layers = map.getStyle()?.layers ?? [];
+    const dependent = [];
+    let beforeId;
+    for (let i = 0; i < layers.length; i++) {
+        if (layers[i].source === id) {
+            dependent.push(layers[i]);
+            beforeId = undefined;
+        } else if (dependent.length > 0 && beforeId === undefined) {
+            beforeId = layers[i].id;
+        }
+    }
+
+    for (const layer of dependent) {
+        map.removeLayer(layer.id);
+    }
+
+    map.removeSource(id);
+    map.addSource(id, source);
+    for (const layer of dependent) {
+        map.addLayer(layer, beforeId);
+    }
 }
 
 /**

@@ -31,6 +31,8 @@ export interface TileSourceSpec {
   tiles: string[];
   minzoom?: number;
   maxzoom?: number;
+  bounds?: number[];
+  tileSize?: number;
   promoteId?: string | Record<string, string>;
   attribution?: string;
 }

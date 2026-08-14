@@ -13,6 +13,7 @@ interface ClusterSourceLike {
   setData?: (data: unknown) => void;
   updateData?: (data: unknown) => void;
   setTiles?: (tiles: string[]) => void;
+  serialize?: () => Record<string, unknown>;
   getClusterLeaves?: (
     clusterId: number,
     limit: number,
@@ -108,23 +109,33 @@ export class GeoportalMapHandle {
   upsertTileSource(sourceId: string, spec: TileSourceSpec): void {
     this.ensureAlive();
     const existing = this.map.getSource(sourceId) as ClusterSourceLike | undefined;
-    if (existing && typeof existing.setTiles === 'function') {
-      existing.setTiles(spec.tiles);
-      return;
-    }
-
-    if (existing) {
-      this.map.removeSource(sourceId);
-    }
-
-    this.map.addSource(sourceId, {
+    const sourceSpec = {
       type: spec.type,
       tiles: spec.tiles,
       minzoom: spec.minzoom,
       maxzoom: spec.maxzoom,
+      bounds: spec.bounds,
+      tileSize: spec.tileSize,
       promoteId: spec.promoteId,
       attribution: spec.attribution,
-    } as never);
+    };
+
+    if (!existing) {
+      this.map.addSource(sourceId, sourceSpec as never);
+      return;
+    }
+
+    if (typeof existing.setTiles !== 'function') {
+      throw new Error(`Source '${sourceId}' exists but does not support setTiles.`);
+    }
+
+    const current = typeof existing.serialize === 'function' ? existing.serialize() : {};
+    if (tileSourceSpecNeedsReplace(current, spec)) {
+      replaceTileSource(this.map, sourceId, sourceSpec);
+      return;
+    }
+
+    existing.setTiles(spec.tiles);
   }
 
   applyViewState(state: ApplyViewStateOptions): void {
@@ -244,4 +255,51 @@ export class GeoportalMapHandle {
 
 export function createGeoportalMapHandle(map: MapLibreMap, containerId: string): GeoportalMapHandle {
   return new GeoportalMapHandle(map, containerId);
+}
+
+function tileSourceSpecNeedsReplace(
+  current: Record<string, unknown>,
+  next: TileSourceSpec,
+): boolean {
+  return !sameSourceField(next.minzoom, current.minzoom)
+    || !sameSourceField(next.maxzoom, current.maxzoom)
+    || !sameSourceField(next.tileSize, current.tileSize)
+    || !sameSourceField(next.bounds, current.bounds)
+    || !sameSourceField(next.promoteId, current.promoteId);
+}
+
+function sameSourceField(next: unknown, current: unknown): boolean {
+  if (next == null) {
+    return true;
+  }
+
+  return JSON.stringify(next) === JSON.stringify(current);
+}
+
+function replaceTileSource(
+  map: MapLibreMap,
+  id: string,
+  source: Record<string, unknown>,
+): void {
+  const layers = map.getStyle()?.layers ?? [];
+  const dependent: typeof layers = [];
+  let beforeId: string | undefined;
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].source === id) {
+      dependent.push(layers[i]);
+      beforeId = undefined;
+    } else if (dependent.length > 0 && beforeId === undefined) {
+      beforeId = layers[i].id;
+    }
+  }
+
+  for (const layer of dependent) {
+    map.removeLayer(layer.id);
+  }
+
+  map.removeSource(id);
+  map.addSource(id, source as never);
+  for (const layer of dependent) {
+    map.addLayer(layer, beforeId);
+  }
 }

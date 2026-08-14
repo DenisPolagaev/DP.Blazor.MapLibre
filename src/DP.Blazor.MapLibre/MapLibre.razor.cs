@@ -1213,7 +1213,10 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Adds a tile source when missing; otherwise updates <c>tiles</c> in place via <c>setTiles</c>.
+    /// Adds a tile source via <c>map.addSource</c> when missing.
+    /// If only <c>tiles</c> changed, calls native <c>setTiles</c>.
+    /// <c>bounds</c>, <c>minzoom</c>, <c>maxzoom</c>, and <c>tileSize</c> have no setters in MapLibre —
+    /// those changes recreate the source with <c>removeLayer</c> / <c>removeSource</c> / <c>addSource</c> / <c>addLayer</c>.
     /// </summary>
     /// <returns><c>"added"</c> or <c>"updated"</c>.</returns>
     public async ValueTask<string> UpsertTileSource(string id, ISource source)

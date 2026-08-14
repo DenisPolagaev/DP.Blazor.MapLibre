@@ -109,21 +109,29 @@ var GeoportalMapHandle = class {
   upsertTileSource(sourceId, spec) {
     this.ensureAlive();
     const existing = this.map.getSource(sourceId);
-    if (existing && typeof existing.setTiles === "function") {
-      existing.setTiles(spec.tiles);
-      return;
-    }
-    if (existing) {
-      this.map.removeSource(sourceId);
-    }
-    this.map.addSource(sourceId, {
+    const sourceSpec = {
       type: spec.type,
       tiles: spec.tiles,
       minzoom: spec.minzoom,
       maxzoom: spec.maxzoom,
+      bounds: spec.bounds,
+      tileSize: spec.tileSize,
       promoteId: spec.promoteId,
       attribution: spec.attribution
-    });
+    };
+    if (!existing) {
+      this.map.addSource(sourceId, sourceSpec);
+      return;
+    }
+    if (typeof existing.setTiles !== "function") {
+      throw new Error(`Source '${sourceId}' exists but does not support setTiles.`);
+    }
+    const current = typeof existing.serialize === "function" ? existing.serialize() : {};
+    if (tileSourceSpecNeedsReplace(current, spec)) {
+      replaceTileSource(this.map, sourceId, sourceSpec);
+      return;
+    }
+    existing.setTiles(spec.tiles);
   }
   applyViewState(state) {
     this.ensureAlive();
@@ -217,6 +225,40 @@ var GeoportalMapHandle = class {
 };
 function createGeoportalMapHandle(map, containerId) {
   return new GeoportalMapHandle(map, containerId);
+}
+function tileSourceSpecNeedsReplace(current, next) {
+  return !sameSourceField(next.minzoom, current.minzoom)
+    || !sameSourceField(next.maxzoom, current.maxzoom)
+    || !sameSourceField(next.tileSize, current.tileSize)
+    || !sameSourceField(next.bounds, current.bounds)
+    || !sameSourceField(next.promoteId, current.promoteId);
+}
+function sameSourceField(next, current) {
+  if (next == null) {
+    return true;
+  }
+  return JSON.stringify(next) === JSON.stringify(current);
+}
+function replaceTileSource(map, id, source) {
+  const layers = map.getStyle()?.layers ?? [];
+  const dependent = [];
+  let beforeId;
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].source === id) {
+      dependent.push(layers[i]);
+      beforeId = void 0;
+    } else if (dependent.length > 0 && beforeId === void 0) {
+      beforeId = layers[i].id;
+    }
+  }
+  for (const layer of dependent) {
+    map.removeLayer(layer.id);
+  }
+  map.removeSource(id);
+  map.addSource(id, source);
+  for (const layer of dependent) {
+    map.addLayer(layer, beforeId);
+  }
 }
 export {
   GeoportalMapHandle,
