@@ -363,6 +363,22 @@ export async function initializeMap(options, dotnetReference, transformConstrain
         dotnetReference.invokeMethodAsync("OnStyleLoadCallback").catch(console.error);
     });
 
+    // Central async error reporting for failed style fetches and source/tile loads.
+    // We forward a compact DTO to .NET to allow UI to dismiss "loading" overlays.
+    map.on('error', (e) => {
+        const payload = {
+            type: 'error',
+            resourceType: e?.resourceType ?? null,
+            sourceId: e?.sourceId ?? null,
+            dataType: e?.dataType ?? null,
+            error: {
+                message: e?.error?.message ?? e?.message ?? null,
+                status: e?.error?.status ?? null,
+            }
+        };
+        dotnetReference.invokeMethodAsync("OnErrorCallback", payload).catch(console.error);
+    });
+
     if (map.loaded()) {
         queueMicrotask(invokeLoadCallback);
     } else {

@@ -147,6 +147,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     [Parameter]
     public EventCallback<EventArgs> OnStyleLoad { get; set; }
 
+    /// <summary>
+    /// Callback event that is triggered when MapLibre reports an asynchronous error
+    /// (e.g. failing to load the base style or source tiles).
+    /// </summary>
+    [Parameter]
+    public EventCallback<MapErrorEvent> OnMapError { get; set; }
+
     #endregion
 
     /// <summary>
@@ -156,6 +163,15 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public async Task OnStyleLoadCallback()
     {
         await OnStyleLoad.InvokeAsync(EventArgs.Empty);
+    }
+
+    [JSInvokable]
+    public async Task OnErrorCallback(MapErrorEvent error)
+    {
+        if (OnMapError.HasDelegate)
+        {
+            await OnMapError.InvokeAsync(error);
+        }
     }
 
 
