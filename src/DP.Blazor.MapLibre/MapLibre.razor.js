@@ -30,6 +30,7 @@ export async function prepareMapLibreGl() {
         throw new Error('MapLibre GL JS is not available on globalThis.maplibregl');
     }
 }
+
 /**
  * Cuts the GeoJSON source at the antimeridian if the option is enabled.
  *
@@ -483,27 +484,35 @@ function createMapEventHandler(dotnetReference, throttleMs) {
 }
 
 /**
+ * MapLibre's queryRenderedFeatures / layer events return MapGeoJSONFeature objects
+ * whose geometry getter expands vector-tile coordinates. Crossing to .NET must not
+ * serialize that payload (see MapLibre "Get features under the mouse pointer").
+ */
+function toCompactFeature(feature, includeGeometry = false) {
+    return {
+        type: 'Feature',
+        id: feature?.id ?? null,
+        source: feature?.source ?? null,
+        sourceLayer: feature?.sourceLayer ?? null,
+        layer: feature?.layer?.id ? { id: feature.layer.id } : null,
+        layerId: feature?.layer?.id ?? null,
+        properties: feature?.properties ?? null,
+        geometry: includeGeometry
+            ? (feature?.geometry ?? null)
+            : (feature?.geometry
+                ? { type: feature.geometry.type, coordinates: [] }
+                : { type: 'Point', coordinates: [0, 0] })
+    };
+}
+
+/**
  * Builds a compact, serializable event payload without mutating MapLibre's event.
  * Geometry is omitted by default to keep the interop cold-path small.
  */
 function createCompactMapEventDto(e, options) {
     const includeGeometry = options?.includeGeometry === true;
     const features = Array.isArray(e?.features)
-        ? e.features.map((feature) => ({
-            type: 'Feature',
-            id: feature?.id ?? null,
-            source: feature?.source ?? null,
-            sourceLayer: feature?.sourceLayer ?? null,
-            layer: feature?.layer?.id ? { id: feature.layer.id } : null,
-            layerId: feature?.layer?.id ?? null,
-            properties: feature?.properties ?? null,
-            // Keep a minimal Geometry placeholder so existing C# DTOs deserialize.
-            geometry: includeGeometry
-                ? (feature?.geometry ?? null)
-                : (feature?.geometry
-                    ? { type: feature.geometry.type, coordinates: [] }
-                    : { type: 'Point', coordinates: [0, 0] })
-        }))
+        ? e.features.map((feature) => toCompactFeature(feature, includeGeometry))
         : undefined;
 
     return {
@@ -965,12 +974,10 @@ export function upsertTileSource(container, id, source) {
         return "added";
     }
 
-    if (typeof existing.setTiles !== "function") {
-        throw new Error(`Source "${id}" exists but does not support setTiles.`);
-    }
-
-    if (!source?.tiles) {
-        throw new Error(`upsertTileSource requires source.tiles for id "${id}".`);
+    const nextUrl = typeof source?.url === "string" ? source.url : null;
+    const nextTiles = Array.isArray(source?.tiles) ? source.tiles : null;
+    if (!nextUrl && !nextTiles) {
+        throw new Error(`upsertTileSource requires source.url or source.tiles for id "${id}".`);
     }
 
     const current = typeof existing.serialize === "function" ? existing.serialize() : {};
@@ -979,7 +986,17 @@ export function upsertTileSource(container, id, source) {
         return "updated";
     }
 
-    existing.setTiles(source.tiles);
+    if (nextUrl && typeof existing.setUrl === "function") {
+        existing.setUrl(nextUrl);
+        return "updated";
+    }
+
+    if (nextTiles && typeof existing.setTiles === "function") {
+        existing.setTiles(nextTiles);
+        return "updated";
+    }
+
+    replaceTileSource(map, id, source);
     return "updated";
 }
 
@@ -988,7 +1005,6 @@ function tileSourceSpecNeedsReplace(current, next) {
         || !sameSourceField(next.maxzoom, current.maxzoom)
         || !sameSourceField(next.tileSize, current.tileSize)
         || !sameSourceField(next.scheme, current.scheme)
-        || !sameSourceField(next.url, current.url)
         || !sameSourceField(next.promoteId, current.promoteId)
         || !sameSourceField(next.bounds, current.bounds);
 }
@@ -2275,11 +2291,13 @@ export function project(container, lngLat) {
  * @returns {Array} Query results.
  */
 export function queryRenderedFeatures(container, query, options) {
-    return mapInstances[container].queryRenderedFeatures(query, options);
+    return requireMap(container, 'queryRenderedFeatures')
+        .queryRenderedFeatures(query, options)
+        .map((feature) => toCompactFeature(feature));
 }
 
 export function queryRenderedFeaturesJson(container, query, options) {
-    return JSON.stringify(mapInstances[container].queryRenderedFeatures(query, options));
+    return JSON.stringify(queryRenderedFeatures(container, query, options));
 }
 
 export function queryRenderedFeaturesWithoutGeometriesReturned(container, query, options) {
@@ -2930,6 +2948,43 @@ export function zoomTo(container, zoom, options, eventData) {
     mapInstances[container].zoomTo(zoom, options, eventData);
 }
 
+function overlayElement(overlay) {
+    if (overlay && typeof overlay.getElement === 'function') {
+        return overlay.getElement();
+    }
+
+    return overlay?._container ?? null;
+}
+
+function isGlobeProjection(map) {
+    const projection = typeof map.getProjection === 'function' ? map.getProjection() : null;
+    return projection?.type === 'globe';
+}
+
+function addOverlayAfterProjection(map, overlay) {
+    overlay.addTo(map);
+    if (!isGlobeProjection(map)
+        || typeof overlay.setLngLat !== 'function'
+        || typeof overlay.getLngLat !== 'function') {
+        return;
+    }
+
+    const el = overlayElement(overlay);
+    if (!el) {
+        return;
+    }
+
+    el.style.visibility = 'hidden';
+    map.once('render', () => {
+        if (!overlay._map) {
+            return;
+        }
+
+        overlay.setLngLat(overlay.getLngLat());
+        el.style.visibility = '';
+    });
+}
+
 function resolveMarkerOptions(options) {
     const resolved = { ...options };
     delete resolved.extensions;
@@ -3001,7 +3056,7 @@ export function createPopup(container, popupId, options, lngLat, content) {
         popup.setLngLat([lngLat.lng, lngLat.lat]);
     }
 
-    popup.addTo(map);
+    addOverlayAfterProjection(map, popup);
     popupInstances[popupId] = popup;
     popupContainers[popupId] = container;
 }
@@ -3015,8 +3070,8 @@ export function createMarker(container, markerId, options, position) {
     const extensions = options?.extensions;
     const resolvedOptions = resolveMarkerOptions(options ?? {});
     const marker = new globalThis.maplibregl.Marker(resolvedOptions)
-        .setLngLat([position.lng, position.lat])
-        .addTo(map);
+        .setLngLat([position.lng, position.lat]);
+    addOverlayAfterProjection(map, marker);
 
     applyMarkerExtensions(marker, extensions);
 

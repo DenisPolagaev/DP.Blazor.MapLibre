@@ -1,0 +1,11 @@
+THIRD-PARTY NOTICES
+===================
+
+This package vendors JavaScript from:
+
+  pmtiles
+  https://github.com/protomaps/PMTiles
+  Copyright (c) 2021 Brandon Liu / Protomaps LLC
+  License: BSD-3-Clause
+
+The BSD-3-Clause license text from that project applies to the vendored sources under wwwroot/pmtiles/.

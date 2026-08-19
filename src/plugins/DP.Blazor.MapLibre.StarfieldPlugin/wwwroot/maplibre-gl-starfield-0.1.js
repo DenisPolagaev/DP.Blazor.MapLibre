@@ -515,6 +515,13 @@ class MapLibreStarryBackground {
   /**
    * Measure the visible globe disk in glow-container CSS pixels.
    * This matches what the user sees (perspective), unlike getGlobeRadiusPixels.
+   *
+   * `project(getCenter())` is the look-at *surface* point, not the silhouette
+   * centroid. Pitching (Ctrl+drag) orbits the camera around that point, so the
+   * Earth disk slides on screen while the look-at stays put. Searching only +X/+Y
+   * from there also inflates the radius (a long downward chord). Measure all four
+   * limbs and take the midpoint.
+   *
    * @param {object} map
    * @returns {{ cx: number, cy: number, radius: number }|null}
    */
@@ -545,23 +552,23 @@ class MapLibreStarryBackground {
       return null;
     }
 
-    const cx = center.x + ox;
-    const cy = center.y + oy;
+    const originX = center.x;
+    const originY = center.y;
 
-    if (!this.isScreenPointOnGlobe(map, center.x, center.y)) {
+    if (!this.isScreenPointOnGlobe(map, originX, originY)) {
       return null;
     }
 
     const maxR = Math.hypot(gr.width, gr.height);
-    const search = (dx, dy) => {
+    const searchFrom = (fromX, fromY, dx, dy) => {
       let lo = 0;
       let hi = maxR;
       for (let i = 0; i < 22; i++) {
         const mid = (lo + hi) * 0.5;
         const on = this.isScreenPointOnGlobe(
           map,
-          center.x + dx * mid,
-          center.y + dy * mid
+          fromX + dx * mid,
+          fromY + dy * mid
         );
         if (on) {
           lo = mid;
@@ -572,15 +579,33 @@ class MapLibreStarryBackground {
       return lo;
     };
 
-    // Silhouette can be elliptical with pitch — average axes for a circle approx.
-    const rx = search(1, 0);
-    const ry = search(0, 1);
+    const rRight = searchFrom(originX, originY, 1, 0);
+    const rLeft = searchFrom(originX, originY, -1, 0);
+    const rDown = searchFrom(originX, originY, 0, 1);
+    const rUp = searchFrom(originX, originY, 0, -1);
+
+    const mapCx = originX + (rRight - rLeft) * 0.5;
+    const mapCy = originY + (rDown - rUp) * 0.5;
+
+    // Left/right from the look-at point are chords when pitch offsets the disk.
+    // Re-measure the horizontal axis at the silhouette center.
+    let rx;
+    let ry = (rUp + rDown) * 0.5;
+    if (this.isScreenPointOnGlobe(map, mapCx, mapCy)) {
+      rx =
+        (searchFrom(mapCx, mapCy, 1, 0) + searchFrom(mapCx, mapCy, -1, 0)) * 0.5;
+      ry =
+        (searchFrom(mapCx, mapCy, 0, 1) + searchFrom(mapCx, mapCy, 0, -1)) * 0.5;
+    } else {
+      rx = (rLeft + rRight) * 0.5;
+    }
+
     const radius = (rx + ry) * 0.5;
     if (!Number.isFinite(radius) || radius < 2) {
       return null;
     }
 
-    return { cx, cy, radius };
+    return { cx: mapCx + ox, cy: mapCy + oy, radius };
   }
 
   /**
