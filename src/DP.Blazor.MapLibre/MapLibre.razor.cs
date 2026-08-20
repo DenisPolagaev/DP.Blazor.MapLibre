@@ -2091,6 +2091,22 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await _jsModule.InvokeAsync<bool>("isStyleLoaded", JsContainerId);
 
     /// <summary>
+    /// Returns true if the map has completed loading and is not currently loading new data or style.
+    /// </summary>
+    public async ValueTask<bool> IsLoaded() =>
+        await _jsModule.InvokeAsync<bool>("loaded", JsContainerId);
+
+    /// <summary>
+    /// Refreshes tiles in a specified source.
+    /// </summary>
+    /// <param name="sourceId">The source ID whose tiles should be reloaded.</param>
+    public async ValueTask RefreshTiles(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        await _jsModule.InvokeVoidAsync("refreshTiles", JsContainerId, sourceId);
+    }
+
+    /// <summary>
     /// Determines if the map is currently zooming.
     /// </summary>
     /// <returns>True if the map is zooming; otherwise, false.</returns>

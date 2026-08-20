@@ -2,6 +2,7 @@ import splitGeoJSON from './geojson-antimeridian-cut/cut.js'
 
 const mapInstances = globalThis.__blazorMapLibreMapInstances ??= {};
 const optionsInstances = globalThis.__blazorMapLibreOptionsInstances ??= {};
+const projectionInstances = globalThis.__blazorMapLibreProjectionInstances ??= {};
 const markerInstances = globalThis.__blazorMapLibreMarkerInstances ??= {};
 const popupInstances = globalThis.__blazorMapLibrePopupInstances ??= {};
 const currentLocationMarkerInstances = globalThis.__blazorMapLibreCurrentLocationMarkers ??= {};
@@ -44,156 +45,6 @@ function cutAntiMeridian(container, data) {
     }
 
     return splitGeoJSON(data);
-}
-
-function lngLatBboxFromCorners(upperLeft, bottomRight) {
-    return {
-        minLng: Math.min(upperLeft.lng, bottomRight.lng),
-        maxLng: Math.max(upperLeft.lng, bottomRight.lng),
-        minLat: Math.min(upperLeft.lat, bottomRight.lat),
-        maxLat: Math.max(upperLeft.lat, bottomRight.lat),
-    };
-}
-
-function pointInBbox(lng, lat, bbox) {
-    return lng >= bbox.minLng && lng <= bbox.maxLng &&
-        lat >= bbox.minLat && lat <= bbox.maxLat;
-}
-
-function pointInRing(lng, lat, ring) {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = ring[i];
-        const [xj, yj] = ring[j];
-        if (((yi > lat) !== (yj > lat)) &&
-            (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
-            inside = !inside;
-        }
-    }
-    return inside;
-}
-
-function pointInPolygonCoords(lng, lat, coordinates) {
-    if (!pointInRing(lng, lat, coordinates[0])) {
-        return false;
-    }
-    for (let h = 1; h < coordinates.length; h++) {
-        if (pointInRing(lng, lat, coordinates[h])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function segmentsIntersect(a1, a2, b1, b2) {
-    function cross(o, a, b) {
-        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-    }
-
-    const d1 = cross(b1, b2, a1);
-    const d2 = cross(b1, b2, a2);
-    const d3 = cross(a1, a2, b1);
-    const d4 = cross(a1, a2, b2);
-
-    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
-}
-
-function lineIntersectsBbox(line, bbox) {
-    for (const [lng, lat] of line) {
-        if (pointInBbox(lng, lat, bbox)) {
-            return true;
-        }
-    }
-
-    const bboxRing = [
-        [bbox.minLng, bbox.minLat],
-        [bbox.maxLng, bbox.minLat],
-        [bbox.maxLng, bbox.maxLat],
-        [bbox.minLng, bbox.maxLat],
-    ];
-
-    for (let i = 0; i < line.length - 1; i++) {
-        const a = line[i];
-        const b = line[i + 1];
-        for (let j = 0; j < 4; j++) {
-            if (segmentsIntersect(a, b, bboxRing[j], bboxRing[(j + 1) % 4])) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-function polygonIntersectsBbox(coordinates, bbox) {
-    for (const ring of coordinates) {
-        for (const [lng, lat] of ring) {
-            if (pointInBbox(lng, lat, bbox)) {
-                return true;
-            }
-        }
-    }
-
-    const samplePoints = [
-        [bbox.minLng, bbox.minLat],
-        [bbox.maxLng, bbox.minLat],
-        [bbox.maxLng, bbox.maxLat],
-        [bbox.minLng, bbox.maxLat],
-        [(bbox.minLng + bbox.maxLng) / 2, (bbox.minLat + bbox.maxLat) / 2],
-    ];
-
-    for (const [lng, lat] of samplePoints) {
-        if (pointInPolygonCoords(lng, lat, coordinates)) {
-            return true;
-        }
-    }
-
-    const bboxRing = [
-        [bbox.minLng, bbox.minLat],
-        [bbox.maxLng, bbox.minLat],
-        [bbox.maxLng, bbox.maxLat],
-        [bbox.minLng, bbox.maxLat],
-    ];
-
-    for (const ring of coordinates) {
-        for (let i = 0; i < ring.length - 1; i++) {
-            const a = ring[i];
-            const b = ring[i + 1];
-            for (let j = 0; j < 4; j++) {
-                if (segmentsIntersect(a, b, bboxRing[j], bboxRing[(j + 1) % 4])) {
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-function geometryIntersectsBbox(geometry, bbox) {
-    if (!geometry) {
-        return false;
-    }
-
-    switch (geometry.type) {
-        case 'Point':
-            return pointInBbox(geometry.coordinates[0], geometry.coordinates[1], bbox);
-        case 'MultiPoint':
-            return geometry.coordinates.some(([lng, lat]) => pointInBbox(lng, lat, bbox));
-        case 'LineString':
-            return lineIntersectsBbox(geometry.coordinates, bbox);
-        case 'MultiLineString':
-            return geometry.coordinates.some(line => lineIntersectsBbox(line, bbox));
-        case 'Polygon':
-            return polygonIntersectsBbox(geometry.coordinates, bbox);
-        case 'MultiPolygon':
-            return geometry.coordinates.some(polygon => polygonIntersectsBbox(polygon, bbox));
-        case 'GeometryCollection':
-            return geometry.geometries.some(g => geometryIntersectsBbox(g, bbox));
-        default:
-            return true;
-    }
 }
 
 const customLayerHandlers = new Map();
@@ -347,8 +198,26 @@ export async function initializeMap(options, dotnetReference, transformConstrain
         throw new Error(`Map container element "${containerKey}" was not found in the DOM.`);
     }
 
+    if (options?.projection) {
+        projectionInstances[containerKey] = options.projection;
+    }
+
+    const userTransformStyle = options?.transformStyle;
+    const transformStyle = (previousStyle, nextStyle) => {
+        let style = nextStyle;
+        if (typeof userTransformStyle === 'function') {
+            style = userTransformStyle(previousStyle, nextStyle) ?? style;
+        }
+        const activeProj = projectionInstances[containerKey];
+        if (activeProj && style && typeof style === 'object' && !style.projection) {
+            style = { ...style, projection: activeProj };
+        }
+        return style;
+    };
+
     const map = new globalThis.maplibregl.Map({
         ...options,
+        transformStyle,
         container: containerElement,
     });
 
@@ -875,8 +744,9 @@ export function addLayer(container, layer, beforeId) {
 }
 
 /**
- * Adds a layer when missing; otherwise updates min/max zoom and optional order.
- * Uses only public MapLibre APIs (getLayer / addLayer / setLayerZoomRange / moveLayer).
+ * Adds a layer when missing; otherwise refreshes zoom, filter, layout, paint, and order.
+ * Uses only public MapLibre APIs (getLayer / addLayer / setLayerZoomRange / setFilter /
+ * setLayoutProperty / setPaintProperty / moveLayer).
  */
 export function ensureLayer(container, layer, beforeId) {
     const map = mapInstances[container];
@@ -887,6 +757,26 @@ export function ensureLayer(container, layer, beforeId) {
 
     if (layer.minzoom != null || layer.maxzoom != null) {
         setLayerZoomRange(container, layer.id, layer.minzoom ?? 0, layer.maxzoom ?? 24);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(layer, 'filter')) {
+        map.setFilter(layer.id, layer.filter ?? null);
+    }
+
+    if (layer.layout && typeof layer.layout === 'object') {
+        for (const [key, value] of Object.entries(layer.layout)) {
+            if (value !== undefined) {
+                map.setLayoutProperty(layer.id, key, value);
+            }
+        }
+    }
+
+    if (layer.paint && typeof layer.paint === 'object') {
+        for (const [key, value] of Object.entries(layer.paint)) {
+            if (value !== undefined) {
+                map.setPaintProperty(layer.id, key, value);
+            }
+        }
     }
 
     if (beforeId) {
@@ -2007,7 +1897,7 @@ export function getPixelRatio(container) {
  * @returns {Object} The projection specification of the map.
  */
 export function getProjection(container) {
-    return mapInstances[container].getProjection();
+    return mapInstances[container]?.getProjection() ?? projectionInstances[container] ?? null;
 }
 
 /**
@@ -2317,19 +2207,8 @@ export function queryRenderedFeaturesJson(container, query, options) {
 }
 
 export function queryRenderedFeaturesWithoutGeometriesReturned(container, query, options) {
-    const upperLeft = mapInstances[container].unproject([query[0][0], query[0][1]]);
-    const bottomRight = mapInstances[container].unproject([query[1][0], query[1][1]]);
-    const bbox = lngLatBboxFromCorners(upperLeft, bottomRight);
-    const features = mapInstances[container].queryRenderedFeatures(query, options);
-
-    const intersectingFeatures = features.filter(feature =>
-        geometryIntersectsBbox(feature.geometry, bbox)
-    );
-
-    for (const feature of intersectingFeatures) {
-        feature.geometry = null;
-    }
-    return intersectingFeatures;
+    const map = requireMap(container, 'queryRenderedFeaturesWithoutGeometriesReturned');
+    return map.queryRenderedFeatures(query, options).map(feature => toCompactFeature(feature, false));
 }
 
 /**
@@ -2393,6 +2272,10 @@ export function remove(container) {
 
     if (optionsInstances[container]) {
         delete optionsInstances[container];
+    }
+
+    if (projectionInstances[container]) {
+        delete projectionInstances[container];
     }
 
     if (currentLocationMarkerInstances[container]) {
@@ -2841,7 +2724,8 @@ export function setVerticalFieldOfView(container, fov, eventData) {
  * @param {object} projection - The projection object.
  */
 export function setProjection(container, projection) {
-    mapInstances[container].setProjection(projection);
+    projectionInstances[container] = projection;
+    mapInstances[container]?.setProjection(projection);
 }
 
 /**
@@ -2964,43 +2848,6 @@ export function zoomTo(container, zoom, options, eventData) {
     mapInstances[container].zoomTo(zoom, options, eventData);
 }
 
-function overlayElement(overlay) {
-    if (overlay && typeof overlay.getElement === 'function') {
-        return overlay.getElement();
-    }
-
-    return overlay?._container ?? null;
-}
-
-function isGlobeProjection(map) {
-    const projection = typeof map.getProjection === 'function' ? map.getProjection() : null;
-    return projection?.type === 'globe';
-}
-
-function addOverlayAfterProjection(map, overlay) {
-    overlay.addTo(map);
-    if (!isGlobeProjection(map)
-        || typeof overlay.setLngLat !== 'function'
-        || typeof overlay.getLngLat !== 'function') {
-        return;
-    }
-
-    const el = overlayElement(overlay);
-    if (!el) {
-        return;
-    }
-
-    el.style.visibility = 'hidden';
-    map.once('render', () => {
-        if (!overlay._map) {
-            return;
-        }
-
-        overlay.setLngLat(overlay.getLngLat());
-        el.style.visibility = '';
-    });
-}
-
 function resolveMarkerOptions(options) {
     const resolved = { ...options };
     delete resolved.extensions;
@@ -3072,7 +2919,7 @@ export function createPopup(container, popupId, options, lngLat, content) {
         popup.setLngLat([lngLat.lng, lngLat.lat]);
     }
 
-    addOverlayAfterProjection(map, popup);
+    popup.addTo(map);
     popupInstances[popupId] = popup;
     popupContainers[popupId] = container;
 }
@@ -3087,7 +2934,7 @@ export function createMarker(container, markerId, options, position) {
     const resolvedOptions = resolveMarkerOptions(options ?? {});
     const marker = new globalThis.maplibregl.Marker(resolvedOptions)
         .setLngLat([position.lng, position.lat]);
-    addOverlayAfterProjection(map, marker);
+    marker.addTo(map);
 
     applyMarkerExtensions(marker, extensions);
 
@@ -3199,8 +3046,12 @@ export function invokePopup(popupId, method, args) {
 
     switch (method) {
         case 'setLngLat': {
-            const position = payload[0];
-            popup.setLngLat([position.lng, position.lat]);
+            const position = payload[0] ?? {};
+            const lng = position.lng ?? position.longitude ?? position.Longitude;
+            const lat = position.lat ?? position.latitude ?? position.Latitude;
+            if (Number.isFinite(lng) && Number.isFinite(lat)) {
+                popup.setLngLat([lng, lat]);
+            }
             return null;
         }
         case 'getLngLat': {
@@ -3785,38 +3636,12 @@ export function refreshTiles(container, sourceId) {
 }
 /**
  * Refreshes specific tiles in a source when possible.
- * Prefers Map#refreshTiles; falls back to TileManager private reload only when present.
  * @param {string} container - The map container.
  * @param {string} sourceId - The source id
- * @param {Array<object>} tileIds - Tile id objects with { z, x, y }
+ * @param {Array<object>} [tileIds] - Tile id objects with { z, x, y }
  */
 export function refreshTileIDs(container, sourceId, tileIds) {
     const mapInstance = requireMap(container, 'refreshTileIDs');
-    if (!Array.isArray(tileIds) || tileIds.length === 0) {
-        if (typeof mapInstance.refreshTiles === 'function') {
-            mapInstance.refreshTiles(sourceId);
-        }
-        return;
-    }
-
-    const tileManager = mapInstance.style?.tileManagers?.[sourceId];
-    const inView = tileManager?._inViewTiles;
-    if (tileManager && inView && typeof inView.getAllIds === 'function' && typeof tileManager._reloadTile === 'function') {
-        for (const id of inView.getAllIds()) {
-            const tile = inView.getTileById(id);
-            const c = tile?.tileID?.canonical;
-            if (!c) {
-                continue;
-            }
-
-            if (tileIds.some(t => t.z === c.z && t.x === c.x && t.y === c.y)) {
-                tileManager._reloadTile(id, 'expired');
-            }
-        }
-        return;
-    }
-
-    // Public fallback: reload the whole source rather than touching private TileManager fields.
     if (typeof mapInstance.refreshTiles === 'function') {
         mapInstance.refreshTiles(sourceId);
     }
