@@ -724,10 +724,21 @@ export async function addImage(container, id, url, options) {
     if (map.hasImage(id)) return;
 
     const image = await loadMapImageSource(map, url);
-    if (options === undefined || options === null) {
-        map.addImage(id, image);
-    } else {
-        map.addImage(id, image, options);
+    // Sprite / concurrent resolver may have inserted the id while we awaited.
+    if (map.hasImage(id)) return;
+
+    try {
+        if (options === undefined || options === null) {
+            map.addImage(id, image);
+        } else {
+            map.addImage(id, image, options);
+        }
+    } catch (error) {
+        const message = error?.message ?? String(error);
+        if (message.includes('already exists')) {
+            return;
+        }
+        throw error;
     }
 }
 
