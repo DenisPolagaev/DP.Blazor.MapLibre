@@ -21,6 +21,11 @@ export async function initialize() {
                 if (err?.name === 'AbortError' || abort?.signal?.aborted) {
                     throw err;
                 }
+                // TileJSON (`source.url`) must not become an empty tile payload:
+                // MapLibre then reads `tiles.length` on undefined.
+                if (params?.type === 'json') {
+                    throw err;
+                }
                 // Sparse archives and failed range reads otherwise surface as
                 // MapLibre Evented `error` from `_loadTile`.
                 return { data: new Uint8Array() };
