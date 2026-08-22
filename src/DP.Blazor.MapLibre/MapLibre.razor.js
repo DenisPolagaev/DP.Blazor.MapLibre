@@ -1,4 +1,22 @@
 import splitGeoJSON from './geojson-antimeridian-cut/cut.js'
+import {
+    coalesceTransactions,
+    disposeOverlay,
+    disposeSkipCache,
+    forgetImage,
+    forgetLayer,
+    forgetSource,
+    overlayFor,
+    payloadKeyFromValue,
+    recordImage,
+    recordLayer,
+    recordSource,
+    recordSourceData,
+    recordSourceTiles,
+    recordSourceUrl,
+    replayOverlay,
+    skipCacheFor,
+} from './js/runtime/index.js'
 
 const mapInstances = globalThis.__blazorMapLibreMapInstances ??= {};
 const optionsInstances = globalThis.__blazorMapLibreOptionsInstances ??= {};
@@ -198,6 +216,10 @@ export async function initializeMap(options, dotnetReference, transformConstrain
         throw new Error(`Map container element "${containerKey}" was not found in the DOM.`);
     }
 
+    const preserveRuntimeOverlay = options?.preserveRuntimeOverlayOnStyleChange !== false;
+    const mapConstructorOptions = { ...options };
+    delete mapConstructorOptions.preserveRuntimeOverlayOnStyleChange;
+
     if (options?.projection) {
         projectionInstances[containerKey] = options.projection;
     }
@@ -216,7 +238,7 @@ export async function initializeMap(options, dotnetReference, transformConstrain
     };
 
     const map = new globalThis.maplibregl.Map({
-        ...options,
+        ...mapConstructorOptions,
         transformStyle,
         container: containerElement,
     });
@@ -229,7 +251,14 @@ export async function initializeMap(options, dotnetReference, transformConstrain
     };
 
     map.on('style.load', () => {
-        dotnetReference.invokeMethodAsync("OnStyleLoadCallback").catch(console.error);
+        const replay = preserveRuntimeOverlay
+            ? replayOverlay(map, overlayFor(containerKey), (id, url, imageOptions) => addImage(containerKey, id, url, imageOptions))
+            : Promise.resolve();
+        replay
+            .catch((error) => console.error('MapLibre runtime overlay replay failed.', error))
+            .finally(() => {
+                dotnetReference.invokeMethodAsync("OnStyleLoadCallback").catch(console.error);
+            });
     });
 
     // Central async error reporting for failed style fetches and source/tile loads.
@@ -733,6 +762,7 @@ export async function addImage(container, id, url, options) {
         } else {
             map.addImage(id, image, options);
         }
+        recordImage(overlayFor(container), id, url, options);
     } catch (error) {
         const message = error?.message ?? String(error);
         if (message.includes('already exists')) {
@@ -752,6 +782,9 @@ export async function addImage(container, id, url, options) {
  */
 export function addLayer(container, layer, beforeId) {
     mapInstances[container].addLayer(layer, beforeId);
+    if (layer && typeof layer === 'object') {
+        recordLayer(overlayFor(container), layer, beforeId);
+    }
 }
 
 /**
@@ -794,6 +827,7 @@ export function ensureLayer(container, layer, beforeId) {
         moveLayer(container, layer.id, beforeId);
     }
 
+    recordLayer(overlayFor(container), layer, beforeId);
     return "updated";
 }
 
@@ -813,9 +847,11 @@ export function addSource(container, id, source) {
     if (source.type === 'geojson') {
         const data = cutAntiMeridian(container, source.data);
         source.data = data;
+        skipCacheFor(container).remember(id, payloadKeyFromValue(data));
     }
 
     map.addSource(id, source);
+    recordSource(overlayFor(container), id, source);
 }
 
 
@@ -828,12 +864,20 @@ export function addSource(container, id, source) {
  * @param {Object} data - The GeoJSON data you wish to apply to the source
  */
 export async function setSourceData(container, id, data) {
+    const cache = skipCacheFor(container);
+    const key = payloadKeyFromValue(data);
+    if (cache.shouldSkip(id, key)) {
+        return;
+    }
+
     data = cutAntiMeridian(container, data);
     const source = mapInstances[container].getSource(id);
     if (source === undefined) {
         throw new Error(`Could not find source with id ${id}`);
     }
     await source.setData(data);
+    cache.remember(id, key);
+    recordSourceData(overlayFor(container), id, data);
 }
 
 /**
@@ -845,6 +889,12 @@ export async function setSourceData(container, id, data) {
  * @param {string} data - The GeoJSON data you wish to apply to the source
  */
 export async function setSourceDataAsJson(container, id, data) {
+    const cache = skipCacheFor(container);
+    const key = payloadKeyFromValue(data);
+    if (cache.shouldSkip(id, key)) {
+        return;
+    }
+
     let jsonData = JSON.parse(data);
     jsonData = cutAntiMeridian(container, jsonData);
     const source = mapInstances[container].getSource(id);
@@ -852,6 +902,8 @@ export async function setSourceDataAsJson(container, id, data) {
         throw new Error(`Could not find source with id ${id}`);
     }
     await source.setData(jsonData);
+    cache.remember(id, key);
+    recordSourceData(overlayFor(container), id, jsonData);
 }
 
 /**
@@ -871,6 +923,7 @@ export function setSourceTiles(container, id, tiles) {
     }
 
     source.setTiles(tiles);
+    recordSourceTiles(overlayFor(container), id, tiles);
 }
 
 /**
@@ -900,20 +953,24 @@ export function upsertTileSource(container, id, source) {
     const current = typeof existing.serialize === "function" ? existing.serialize() : {};
     if (tileSourceSpecNeedsReplace(current, source)) {
         replaceTileSource(map, id, source);
+        recordSource(overlayFor(container), id, source);
         return "updated";
     }
 
     if (nextUrl && typeof existing.setUrl === "function") {
         existing.setUrl(nextUrl);
+        recordSourceUrl(overlayFor(container), id, nextUrl);
         return "updated";
     }
 
     if (nextTiles && typeof existing.setTiles === "function") {
         existing.setTiles(nextTiles);
+        recordSourceTiles(overlayFor(container), id, nextTiles);
         return "updated";
     }
 
     replaceTileSource(map, id, source);
+    recordSource(overlayFor(container), id, source);
     return "updated";
 }
 
@@ -982,6 +1039,7 @@ export function setSourceUrl(container, id, url) {
     }
 
     source.setUrl(url);
+    recordSourceUrl(overlayFor(container), id, url);
 }
 
 /**
@@ -2292,6 +2350,9 @@ export function remove(container) {
     if (currentLocationMarkerInstances[container]) {
         delete currentLocationMarkerInstances[container];
     }
+
+    disposeSkipCache(container);
+    disposeOverlay(container);
 }
 
 /**
@@ -2333,6 +2394,7 @@ export function removeFeatureState(container, target, key) {
  */
 export function removeImage(container, id) {
     mapInstances[container].removeImage(id);
+    forgetImage(overlayFor(container), id);
 }
 
 /**
@@ -2342,6 +2404,7 @@ export function removeImage(container, id) {
  */
 export function removeLayer(container, id) {
     mapInstances[container].removeLayer(id);
+    forgetLayer(overlayFor(container), id);
 }
 
 /**
@@ -2357,6 +2420,7 @@ export function removeLayerIfExists(container, id) {
     }
 
     map.removeLayer(id);
+    forgetLayer(overlayFor(container), id);
     return true;
 }
 
@@ -2382,6 +2446,8 @@ export function removeLayersIfExist(container, ids) {
  */
 export function removeSource(container, id) {
     mapInstances[container].removeSource(id);
+    skipCacheFor(container).forget(id);
+    forgetSource(overlayFor(container), id);
 }
 
 /**
@@ -2397,6 +2463,8 @@ export function removeSourceIfExists(container, id) {
     }
 
     map.removeSource(id);
+    skipCacheFor(container).forget(id);
+    forgetSource(overlayFor(container), id);
     return true;
 }
 
@@ -2576,6 +2644,7 @@ export function setGlyphs(container, glyphsUrl, options) {
  * @param {object} [options] - Style options.
  */
 export function setStyle(container, style, options) {
+    skipCacheFor(container).forget();
     mapInstances[container].setStyle(style, options);
 }
 
@@ -3196,7 +3265,8 @@ export function removeCurrentLocationMarker(container) {
  * @param {object} data - Options for animation like duration, offset, etc.
  */
 export async function executeTransaction(container, data) {
-    for (const d of data) {
+    const transactions = coalesceTransactions(Array.isArray(data) ? data : []);
+    for (const d of transactions) {
         switch (d.event) {
             case "addControl":
                 addControl(container, d.data[0], d.data[1], d.data[2]);

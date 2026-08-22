@@ -422,6 +422,15 @@ public class MapOptions
     public object? Style { get; set; } = MapStyles.OpenStreetMap;
 
     /// <summary>
+    /// When true (default), sources, layers, and images added at runtime are replayed
+    /// after <c>setStyle</c> / <c>style.load</c>. Strip this flag before constructing
+    /// <c>maplibregl.Map</c> — it is not a MapLibre GL JS option.
+    /// </summary>
+    [JsonPropertyName("preserveRuntimeOverlayOnStyleChange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PreserveRuntimeOverlayOnStyleChange { get; set; } = true;
+
+    /// <summary>
     /// Enables \"drag to pitch\" interaction, or provides options for pitch behavior.
     /// Default is true.
     /// </summary>

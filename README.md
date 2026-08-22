@@ -59,7 +59,7 @@ npm ci
 npm run build
 ```
 
-This typechecks the `GeoportalMapHandle` facade and emits `wwwroot/js/geoportal-map-facade.js`.
+This typechecks the runtime modules (skip cache, overlay replay, transaction coalesce) and emits `wwwroot/js/runtime/`.
 
 ## Browser lifecycle tests
 

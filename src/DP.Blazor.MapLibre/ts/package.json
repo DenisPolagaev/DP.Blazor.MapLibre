@@ -4,8 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "typecheck": "echo skip",
-    "build": "echo skip",
-    "test": "echo skip"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "maplibre-gl": "6.2.0",
+    "typescript": "^5.8.3"
   }
 }

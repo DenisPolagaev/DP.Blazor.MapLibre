@@ -27,6 +27,7 @@ jobs:
           npm ci
           npm run typecheck
           npm run build
+          npm test
 
   pr-build:
     name: Build Projects
@@ -44,6 +45,7 @@ jobs:
           - src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj
           - src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj
           - src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj
+          - src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj
 
     steps:
       - name: Checkout repository

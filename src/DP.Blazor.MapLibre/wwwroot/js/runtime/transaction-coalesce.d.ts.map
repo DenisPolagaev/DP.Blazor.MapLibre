@@ -1,0 +1,1 @@
+{"version":3,"file":"transaction-coalesce.d.ts","sourceRoot":"","sources":["../../../ts/src/transaction-coalesce.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,WAAW,GAAG;IACtB,KAAK,EAAE,MAAM,CAAC;IACd,IAAI,CAAC,EAAE,OAAO,EAAE,GAAG,IAAI,CAAC;CAC3B,CAAC;AAwBF;;GAEG;AACH,wBAAgB,oBAAoB,CAAC,YAAY,EAAE,WAAW,EAAE,GAAG,WAAW,EAAE,CA8B/E"}

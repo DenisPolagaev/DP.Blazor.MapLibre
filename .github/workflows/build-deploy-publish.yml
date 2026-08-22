@@ -73,6 +73,7 @@ jobs:
           npm ci
           npm run typecheck
           npm run build
+          npm test
 
       - name: Build library and plugins
         run: |
@@ -87,7 +88,8 @@ jobs:
             src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj
+            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
+            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj
           do
             dotnet build "$proj" --no-restore -c Release /p:ContinuousIntegrationBuild=true $VERSION_ARG
           done
@@ -116,7 +118,8 @@ jobs:
             src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj
+            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
+            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj
           do
             dotnet pack "$proj" -c Release --no-build --output nuget $VERSION_ARG
           done
