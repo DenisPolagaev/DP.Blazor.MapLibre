@@ -29,6 +29,9 @@ public sealed class MapPopup
 
     public ValueTask SetHtmlAsync(string html) => _map.InvokePopupVoidAsync(Id, "setHTML", html);
 
+    public ValueTask SetLngLatAndHtmlAsync(LngLat position, string? html) =>
+        _map.InvokePopupVoidAsync(Id, "setLngLatAndHTML", position, html);
+
     public ValueTask SetTextAsync(string text) => _map.InvokePopupVoidAsync(Id, "setText", text);
 
     public ValueTask SetMaxWidthAsync(string maxWidth) => _map.InvokePopupVoidAsync(Id, "setMaxWidth", maxWidth);

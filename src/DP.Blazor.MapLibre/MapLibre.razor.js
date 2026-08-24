@@ -951,27 +951,26 @@ export function upsertTileSource(container, id, source) {
     }
 
     const current = typeof existing.serialize === "function" ? existing.serialize() : {};
-    if (tileSourceSpecNeedsReplace(current, source)) {
+    const locationChanged =
+        (nextUrl != null && nextUrl !== current.url)
+        || (nextTiles != null && !sameTileList(nextTiles, current.tiles));
+    if (tileSourceSpecNeedsReplace(current, source) || locationChanged) {
+        // setTiles/setUrl keep MapLibre worker tiles keyed by source id — PMTiles
+        // archives for a new hour/day would never appear. Recreate the source.
         replaceTileSource(map, id, source);
         recordSource(overlayFor(container), id, source);
         return "updated";
     }
 
-    if (nextUrl && typeof existing.setUrl === "function") {
-        existing.setUrl(nextUrl);
-        recordSourceUrl(overlayFor(container), id, nextUrl);
-        return "updated";
-    }
-
-    if (nextTiles && typeof existing.setTiles === "function") {
-        existing.setTiles(nextTiles);
-        recordSourceTiles(overlayFor(container), id, nextTiles);
-        return "updated";
-    }
-
-    replaceTileSource(map, id, source);
-    recordSource(overlayFor(container), id, source);
     return "updated";
+}
+
+function sameTileList(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+
+    return left.every((url, index) => url === right[index]);
 }
 
 function tileSourceSpecNeedsReplace(current, next) {
@@ -2265,10 +2264,27 @@ export function project(container, lngLat) {
  * @param {object} options - Rendered features query options.
  * @returns {Array} Query results.
  */
+function resolveQueryRenderedOptions(map, options) {
+    if (!options || !Array.isArray(options.layers)) {
+        return options ?? {};
+    }
+
+    const layers = options.layers.filter((id) => typeof id === 'string' && !!map.getLayer(id));
+    if (layers.length === 0) {
+        return null;
+    }
+
+    return { ...options, layers, validate: false };
+}
+
 export function queryRenderedFeatures(container, query, options) {
-    return requireMap(container, 'queryRenderedFeatures')
-        .queryRenderedFeatures(query, options)
-        .map((feature) => toCompactFeature(feature));
+    const map = requireMap(container, 'queryRenderedFeatures');
+    const resolved = resolveQueryRenderedOptions(map, options);
+    if (resolved === null) {
+        return [];
+    }
+
+    return map.queryRenderedFeatures(query, resolved).map((feature) => toCompactFeature(feature));
 }
 
 export function queryRenderedFeaturesJson(container, query, options) {
@@ -2277,7 +2293,12 @@ export function queryRenderedFeaturesJson(container, query, options) {
 
 export function queryRenderedFeaturesWithoutGeometriesReturned(container, query, options) {
     const map = requireMap(container, 'queryRenderedFeaturesWithoutGeometriesReturned');
-    return map.queryRenderedFeatures(query, options).map(feature => toCompactFeature(feature, false));
+    const resolved = resolveQueryRenderedOptions(map, options);
+    if (resolved === null) {
+        return [];
+    }
+
+    return map.queryRenderedFeatures(query, resolved).map(feature => toCompactFeature(feature, false));
 }
 
 /**
@@ -3141,6 +3162,20 @@ export function invokePopup(popupId, method, args) {
         case 'setHTML':
             popup.setHTML(payload[0]);
             return null;
+        case 'setLngLatAndHTML': {
+            const position = payload[0] ?? {};
+            const lng = position.lng ?? position.longitude ?? position.Longitude;
+            const lat = position.lat ?? position.latitude ?? position.Latitude;
+            if (Number.isFinite(lng) && Number.isFinite(lat)) {
+                popup.setLngLat([lng, lat]);
+            }
+
+            if (payload[1] != null) {
+                popup.setHTML(payload[1]);
+            }
+
+            return null;
+        }
         case 'setText':
             popup.setText(payload[0]);
             return null;
