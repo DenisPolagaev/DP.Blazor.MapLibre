@@ -9,7 +9,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "devDependencies": {
-    "maplibre-gl": "6.2.0",
+    "maplibre-gl": "6.6.0",
     "typescript": "^5.8.3"
   }
 }

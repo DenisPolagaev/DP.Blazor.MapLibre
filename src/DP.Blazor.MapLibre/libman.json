@@ -3,7 +3,7 @@
   "defaultProvider": "unpkg",
   "libraries": [
     {
-      "library": "maplibre-gl@6.2.0",
+      "library": "maplibre-gl@6.6.0",
       "destination": "wwwroot/maplibre-gl",
       "files": [
         "dist/maplibre-gl.mjs",
