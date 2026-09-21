@@ -319,8 +319,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         catch (JSDisconnectedException)
         {
         }
-        catch (JSException)
+        catch (JSException ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[MapLibre] Remove plugin dispose failed: {ex.Message}");
         }
         catch (ObjectDisposedException)
         {
@@ -357,8 +358,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             catch (JSDisconnectedException)
             {
             }
-            catch (JSException)
+            catch (JSException ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing listener failed: {ex.Message}");
             }
             catch (ObjectDisposedException)
             {
@@ -381,8 +383,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             catch (JSDisconnectedException)
             {
             }
-            catch (JSException)
+            catch (JSException ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing plugin failed: {ex.Message}");
             }
             catch (ObjectDisposedException)
             {
@@ -400,8 +403,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             catch (JSDisconnectedException)
             {
             }
-            catch (JSException)
+            catch (JSException ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing marker failed: {ex.Message}");
             }
             catch (ObjectDisposedException)
             {
@@ -419,8 +423,9 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             catch (JSDisconnectedException)
             {
             }
-            catch (JSException)
+            catch (JSException ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing popup failed: {ex.Message}");
             }
             catch (ObjectDisposedException)
             {

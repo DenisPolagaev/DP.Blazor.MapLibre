@@ -72,8 +72,9 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
         catch (ObjectDisposedException)
         {
         }
-        catch (JSException)
+        catch (JSException ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[MapLibre] Detach failed: {ex.Message}");
         }
         finally
         {
@@ -107,8 +108,9 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
         catch (ObjectDisposedException)
         {
         }
-        catch (JSException)
+        catch (JSException ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[MapLibre] Dispose failed: {ex.Message}");
         }
         finally
         {

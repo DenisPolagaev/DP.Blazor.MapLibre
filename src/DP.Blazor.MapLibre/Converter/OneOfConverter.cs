@@ -15,7 +15,7 @@ public class OneOfJsonConverter<T1> : JsonConverter<OneOf<T1, JsonArray>>
             return OneOf<T1, JsonArray>.FromT0(t1!);
         }
 
-        throw new NotImplementedException("This converter is only intended for serialization.");
+        throw new NotSupportedException("This converter is only intended for serialization.");
     }
 
     public override void Write(Utf8JsonWriter writer, OneOf<T1, JsonArray> value, JsonSerializerOptions options)
