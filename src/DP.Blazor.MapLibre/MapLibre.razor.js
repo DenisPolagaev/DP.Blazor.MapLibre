@@ -33,17 +33,27 @@ const listenerRegistry = globalThis.__blazorMapLibreListenerRegistry ??= {};
 
 /**
  * Ensures maplibre-gl is on globalThis before creating maps.
- * MapLibre GL JS v6 is ESM-only; we re-export the namespace onto globalThis
- * so plugins and existing interop that expect window.maplibregl keep working.
+ * MapLibre GL JS v6 is ESM-only; we copy the exports into an extensible object
+ * on globalThis so plugins and existing interop that expect window.maplibregl
+ * keep working (UMD plugins mutate window.maplibregl).
  * Does not load any plugins.
  */
 export async function prepareMapLibreGl() {
     if (globalThis.maplibregl?.Map) {
+        // ESM namespace objects are sealed: replace an existing namespace so
+        // plugins can still attach globals (e.g. maplibre-gl-compare's Compare).
+        if (!Object.isExtensible(globalThis.maplibregl)) {
+            globalThis.maplibregl = { ...globalThis.maplibregl };
+        }
+
         return;
     }
 
     const maplibre = await import('./maplibre-gl/dist/maplibre-gl.mjs');
-    globalThis.maplibregl = maplibre;
+    // Copy exports into a plain extensible object. Assigning the module namespace
+    // directly makes window.maplibregl read-only, so UMD plugins that do
+    // `maplibregl.Compare = ...` throw in strict mode.
+    globalThis.maplibregl = { ...maplibre };
 
     if (!globalThis.maplibregl?.Map) {
         throw new Error('MapLibre GL JS is not available on globalThis.maplibregl');

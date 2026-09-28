@@ -113,6 +113,12 @@ async function ensureCompareAttached() {
         throw new Error('MapLibre GL JS must be loaded before maplibre-gl-compare');
     }
 
+    // The compare UMD bundle does `maplibregl.Compare = ...`. MapLibre GL JS v6
+    // ships as an ESM namespace, which is sealed; copy it so the assignment works.
+    if (!Object.isExtensible(globalThis.maplibregl)) {
+        globalThis.maplibregl = { ...globalThis.maplibregl };
+    }
+
     const compareScript = `${compareRelativeBase}maplibre-gl-compare.js`;
     await loadClassicScript(compareScript);
 

@@ -219,7 +219,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             _jsModule = await JsRuntime.InvokeAsync<IJSObjectReference>("import",
                 "./_content/DP.Blazor.MapLibre/MapLibre.razor.js");
 
-            // MapLibre GL JS v6 is ESM-only; prepareMapLibreGl assigns the namespace to globalThis.maplibregl.
+            // MapLibre GL JS v6 is ESM-only; prepareMapLibreGl exposes the exports as a mutable globalThis.maplibregl.
             await InvokeMapJsVoidAsync("prepareMapLibreGl");
 
             _dotNetObjectReference = DotNetObjectReference.Create(this);
