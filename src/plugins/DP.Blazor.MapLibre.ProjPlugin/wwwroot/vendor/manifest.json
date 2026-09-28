@@ -1,0 +1,83 @@
+{
+  "generated": "2026-09-28T07:38:12.954Z",
+  "packages": [
+    {
+      "name": "maplibre-proj",
+      "version": "0.0.5",
+      "dir": "maplibre-proj",
+      "files": 5
+    },
+    {
+      "name": "backproj",
+      "version": "0.0.5",
+      "dir": "backproj",
+      "files": 5
+    },
+    {
+      "name": "proj-wasm",
+      "version": "0.1.0-alpha9",
+      "dir": "proj-wasm",
+      "files": 12
+    },
+    {
+      "name": "ffi-wasm",
+      "version": "0.0.1",
+      "dir": "ffi-wasm",
+      "files": 16
+    },
+    {
+      "name": "@wcohen/wasmts",
+      "version": "0.1.0-alpha6",
+      "dir": "wcohen-wasmts",
+      "files": 8
+    },
+    {
+      "name": "@wcohen/worker-router",
+      "version": "0.0.2",
+      "dir": "worker-router",
+      "files": 4
+    },
+    {
+      "name": "comlink",
+      "version": "4.4.2",
+      "dir": "comlink",
+      "files": 22
+    },
+    {
+      "name": "squint-cljs",
+      "version": "0.14.208",
+      "dir": "squint-cljs",
+      "files": 15
+    },
+    {
+      "name": "resource-tracker",
+      "version": "0.0.1",
+      "dir": "resource-tracker",
+      "files": 3
+    },
+    {
+      "name": "lru-cache",
+      "version": "11.2.6",
+      "dir": "lru-cache",
+      "files": 7
+    },
+    {
+      "name": "@mapbox/vector-tile",
+      "version": "2.0.4",
+      "dir": "mapbox-vector-tile",
+      "files": 3
+    },
+    {
+      "name": "@mapbox/point-geometry",
+      "version": "1.1.0",
+      "dir": "mapbox-point-geometry",
+      "files": 3
+    },
+    {
+      "name": "pbf",
+      "version": "4.0.1",
+      "dir": "pbf",
+      "files": 7
+    }
+  ]
+}

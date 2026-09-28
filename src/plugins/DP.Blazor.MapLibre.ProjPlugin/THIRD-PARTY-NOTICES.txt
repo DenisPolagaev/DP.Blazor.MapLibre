@@ -1,0 +1,33 @@
+THIRD-PARTY NOTICES
+===================
+
+The DP.Blazor.MapLibre.ProjPlugin package vendors JavaScript and WebAssembly from the
+following projects under wwwroot/vendor/. Each vendored directory contains the project's
+own LICENSE file; the license terms of those projects apply to the vendored files.
+
+  proj-wasm                  0.1.0-alpha9   MIT
+      https://www.npmjs.com/package/proj-wasm
+      (bundles PROJ; see proj-wasm/LICENSE)
+  ffi-wasm                   0.0.1          Apache-2.0 WITH LLVM-exception
+      https://www.npmjs.com/package/ffi-wasm
+  @wcohen/wasmts             0.1.0-alpha6   EPL-2.0 OR BSD-3-Clause
+      https://www.npmjs.com/package/@wcohen/wasmts
+      (JTS port; multiple license files under vendor/wcohen-wasmts/)
+  @wcohen/worker-router      0.0.2          Apache-2.0 WITH LLVM-exception
+      https://www.npmjs.com/package/@wcohen/worker-router
+  comlink                    4.4.2          Apache-2.0
+      https://github.com/GoogleChromeLabs/comlink
+  squint-cljs                0.14.208       EPL-1.0
+      https://github.com/squint-cljs/squint
+  resource-tracker           0.0.1          EPL-1.0
+      https://www.npmjs.com/package/resource-tracker
+  lru-cache                  11.2.6         BlueOak-1.0.0
+      https://github.com/isaacs/node-lru-cache
+  @mapbox/vector-tile        2.0.4          BSD-3-Clause
+      https://github.com/mapbox/vector-tile-js
+  @mapbox/point-geometry     1.1.0          ISC
+      https://github.com/mapbox/point-geometry
+  pbf                        4.0.1          BSD-3-Clause
+      https://github.com/mapbox/pbf
+
+Regenerate the vendored tree with: node scripts/vendor-proj.mjs

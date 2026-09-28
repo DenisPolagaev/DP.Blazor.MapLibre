@@ -13,5 +13,7 @@
   href: geogrid.md
 - name: Starfield
   href: starfield.md
+- name: Projection
+  href: proj.md
 - name: Mapbox GL Draw
   href: mapbox-gl-draw.md

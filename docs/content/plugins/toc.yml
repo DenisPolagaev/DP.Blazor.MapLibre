@@ -15,6 +15,8 @@
   href: geogrid-plugin.md
 - name: Starfield plugin
   href: starfield-plugin.md
+- name: Projection plugin
+  href: proj-plugin.md
 - name: Mapbox GL Draw plugin
   href: mapbox-gl-draw-plugin.md
 - name: Plugin examples

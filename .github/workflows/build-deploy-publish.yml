@@ -89,7 +89,8 @@ jobs:
             src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj
+            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj \
+            src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.MapLibre.ProjPlugin.csproj
           do
             dotnet build "$proj" --no-restore -c Release /p:ContinuousIntegrationBuild=true $VERSION_ARG
           done
@@ -119,7 +120,8 @@ jobs:
             src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
             src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj
+            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj \
+            src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.MapLibre.ProjPlugin.csproj
           do
             dotnet pack "$proj" -c Release --no-build --output nuget $VERSION_ARG
           done

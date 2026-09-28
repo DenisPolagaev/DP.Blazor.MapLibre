@@ -35,5 +35,6 @@ builder.RootComponents.RegisterCustomElement<Minimap>("map-minimap");
 builder.RootComponents.RegisterCustomElement<Framerate>("map-framerate");
 builder.RootComponents.RegisterCustomElement<GeoGrid>("map-geogrid");
 builder.RootComponents.RegisterCustomElement<Starfield>("map-starfield");
+builder.RootComponents.RegisterCustomElement<Projection>("map-projection");
 
 await builder.Build().RunAsync();

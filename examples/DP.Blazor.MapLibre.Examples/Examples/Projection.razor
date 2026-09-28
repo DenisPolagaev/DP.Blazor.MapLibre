@@ -1,0 +1,129 @@
+@page "/examples/projection"
+
+@using System.Text.Json.Nodes
+@using DP.Blazor.MapLibre.Models
+@using DP.Blazor.MapLibre.ProjPlugin
+@implements IAsyncDisposable
+
+<ViewOnGitHub FilePath="examples/DP.Blazor.MapLibre.Examples/Examples/Projection.razor" />
+
+<p class="text-muted">
+    Render the same map in any coordinate reference system, powered by
+    <a href="https://www.npmjs.com/package/maplibre-proj" target="_blank" rel="noopener">maplibre-proj</a>
+    (PROJ 9 compiled to WebAssembly). Both the vector basemap and the GeoJSON city markers are
+    reprojected. <code>renderWorldCopies</code> is disabled, as required by the plugin.
+</p>
+
+<MapLibre @ref="_map"
+          Options="_mapOptions"
+          OnLoad="OnMapLoad"
+          Class="rounded-top"
+          Height="600px" />
+
+<div class="d-flex flex-wrap gap-3 align-items-center mt-3">
+    <label class="form-label mb-0" for="crsSelect">Projection</label>
+    <select id="crsSelect" class="form-select w-auto" value="@_selectedCrs" @onchange="OnCrsChangedAsync">
+        <option value="">Mercator (default)</option>
+        <option value="ESRI:54030">Robinson — ESRI:54030</option>
+        <option value="ESRI:54009">Mollweide — ESRI:54009</option>
+        <option value="ESRI:54012">Eckert IV — ESRI:54012</option>
+        <option value="EPSG:5070">Conus Albers — EPSG:5070</option>
+    </select>
+    <span class="text-muted small">@_status</span>
+</div>
+
+@code {
+    private MapLibre _map = new();
+    private readonly ProjPlugin _proj = new();
+    private string _selectedCrs = string.Empty;
+    private string _status = "Drag to pan, scroll to zoom, then switch projection.";
+
+    private static readonly JsonObject BaseStyle = JsonNode.Parse(
+        """
+        {
+          "version": 8,
+          "sources": {
+            "maplibre": {
+              "type": "vector",
+              "tiles": ["https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf"],
+              "maxzoom": 5,
+              "attribution": "MapLibre demo tiles"
+            },
+            "cities": {
+              "type": "geojson",
+              "data": {
+                "type": "FeatureCollection",
+                "features": [
+                  { "type": "Feature", "properties": { "name": "Moscow" }, "geometry": { "type": "Point", "coordinates": [37.62, 55.75] } },
+                  { "type": "Feature", "properties": { "name": "Washington" }, "geometry": { "type": "Point", "coordinates": [-77.04, 38.9] } },
+                  { "type": "Feature", "properties": { "name": "Canberra" }, "geometry": { "type": "Point", "coordinates": [149.13, -35.28] } }
+                ]
+              }
+            }
+          },
+          "layers": [
+            { "id": "background", "type": "background", "paint": { "background-color": "#d8f2ff" } },
+            { "id": "countries-fill", "type": "fill", "source": "maplibre", "source-layer": "countries", "paint": { "fill-color": "#d6c7ff" } },
+            { "id": "countries-boundary", "type": "line", "source": "maplibre", "source-layer": "countries", "paint": { "line-color": "#5b6472", "line-width": 0.6 } },
+            { "id": "cities", "type": "circle", "source": "cities", "paint": { "circle-radius": 5, "circle-color": "#e11d48", "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } }
+          ]
+        }
+        """)!.AsObject();
+
+    private static readonly LngLatBounds WorldBounds = new()
+    {
+        Southwest = new LngLat(-179, -84),
+        Northeast = new LngLat(179, 84),
+    };
+
+    private readonly MapOptions _mapOptions = new()
+    {
+        Style = BaseStyle,
+        Center = new LngLat(0, 20),
+        Zoom = 1,
+        RenderWorldCopies = false,
+        AttributionControl = false,
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _map.RegisterPlugin(_proj);
+        }
+    }
+
+    private Task OnMapLoad(EventArgs _)
+    {
+        _status = "Mercator";
+        return Task.CompletedTask;
+    }
+
+    private async Task OnCrsChangedAsync(ChangeEventArgs args)
+    {
+        _selectedCrs = args.Value as string ?? string.Empty;
+
+        // Clear any area-of-use left over from a previous regional projection.
+        await _map.NativeMap.InvokeVoidAsync("setMaxBounds", (object?)null);
+
+        if (_selectedCrs.Length == 0)
+        {
+            await _map.SetStyle(JsonNode.Parse(BaseStyle.ToJsonString())!.AsObject());
+            await _map.FitBounds(WorldBounds);
+            _status = "Mercator";
+            return;
+        }
+
+        _status = "Reprojecting…";
+
+        var result = await _proj.ApplyReprojectionAsync(new ProjReprojectOptions
+        {
+            Style = JsonNode.Parse(BaseStyle.ToJsonString())!.AsObject(),
+            Crs = _selectedCrs,
+        });
+
+        _status = $"{_selectedCrs} — transformer {(result.TransformerId ?? "n/a")}";
+    }
+
+    public async ValueTask DisposeAsync() => await _proj.DisposeAsync();
+}

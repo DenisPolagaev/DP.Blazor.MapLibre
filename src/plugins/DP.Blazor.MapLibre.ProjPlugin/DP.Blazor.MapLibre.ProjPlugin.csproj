@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+    <PropertyGroup>
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>DP.Blazor.MapLibre.ProjPlugin</PackageId>
+        <Description>Any-projection plugin for DP.Blazor.MapLibre (maplibre-proj / backproj / proj-wasm / wasmts vendored).</Description>
+        <StaticWebAssetBasePath>_content/ProjPlugin</StaticWebAssetBasePath>
+        <RootNamespace>DP.Blazor.MapLibre.ProjPlugin</RootNamespace>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>1591</NoWarn>
+        <IsPackable>true</IsPackable>
+        <PackageTags>Blazor;MapLibre;Projection;PROJ;CRS;Plugin</PackageTags>
+    </PropertyGroup>
+
+    <!--
+        wwwroot is published as static web assets (same as the core DP.Blazor.MapLibre project);
+        the vendored JS/WASM tree under wwwroot/vendor is intentionally NOT embedded as resources.
+        Regenerate it with: node scripts/vendor-proj.mjs
+    -->
+    <ItemGroup>
+        <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\DP.Blazor.MapLibre\DP.Blazor.MapLibre.csproj" />
+    </ItemGroup>
+
+</Project>

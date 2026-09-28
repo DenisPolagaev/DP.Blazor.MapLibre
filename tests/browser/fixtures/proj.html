@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ProjPlugin harness</title>
+  <link rel="stylesheet" href="/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" />
+  <style>
+    html, body, #map { margin: 0; width: 100%; height: 100%; }
+  </style>
+  <!-- Mirrors the Blazor host: an empty import map is present before the plugin runs. -->
+  <script type="importmap"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <script type="module">
+    import * as maplibregl from '/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs';
+
+    // Mirror MapLibre.razor.js: extensible global object so plugins can attach globals.
+    globalThis.maplibregl = { ...maplibregl };
+
+    try {
+      const plugin = await import('/_content/ProjPlugin/ProjPlugin.js');
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: { version: 8, sources: {}, layers: [] },
+        center: [0, 0],
+        zoom: 1,
+        attributionControl: false,
+        renderWorldCopies: false,
+      });
+      await map.once('load');
+
+      plugin.initialize(map);
+      globalThis.__proj = plugin;
+      globalThis.__map = map;
+      globalThis.__projReady = true;
+    } catch (error) {
+      globalThis.__projError = String((error && error.stack) || error);
+    }
+  </script>
+</body>
+</html>

@@ -6,5 +6,6 @@ minimap-plugin
 framerate-plugin
 geogrid-plugin
 starfield-plugin
+proj-plugin
 mapbox-gl-draw-plugin
 examples

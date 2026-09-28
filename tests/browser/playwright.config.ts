@@ -19,9 +19,13 @@ export default defineConfig({
     trace: 'on-first-retry',
     launchOptions: {
       // Soften WebGL limits on Linux CI / chromium-headless-shell.
-      args: process.env.CI
-        ? ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist']
-        : [],
+      args: [
+        ...(process.env.CI
+          ? ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist']
+          : []),
+        // Opt-in: allow cross-origin fetches to a local MinIO/S3 when testing real PMTiles.
+        ...(process.env.PROJ_ALLOW_CORS ? ['--disable-web-security'] : []),
+      ],
     },
   },
   webServer: {
