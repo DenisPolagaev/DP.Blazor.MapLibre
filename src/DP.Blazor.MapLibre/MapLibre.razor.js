@@ -1154,6 +1154,18 @@ export function cameraForBounds(container, bounds, options) {
 }
 
 /**
+ * Calculates camera options that place a geographic anchor at a screen position without
+ * moving the map (MapLibre 6.11+).
+ *
+ * @param {string} container - The identifier for the map container.
+ * @param {{ anchorLocation: Object, anchorScreenPoint: Object, zoom?: number }} options - Anchor options.
+ * @returns {Object} The calculated camera options.
+ */
+export function calculateAnchoredCameraOptions(container, options) {
+    return mapInstances[container].calculateAnchoredCameraOptions(options);
+}
+
+/**
  * Smoothly animates the map viewport to the specified location and zoom level.
  *
  * @param {string} container - The identifier of the map container.
@@ -2054,6 +2066,16 @@ export function getStyle(container) {
 }
 
 /**
+ * Returns the URL the style was loaded from, or null when the style was given as an object
+ * (MapLibre 6.8+).
+ * @param {string} container - The identifier of the map container.
+ * @returns {string|null} The style URL, or null.
+ */
+export function getStyleUrl(container) {
+    return mapInstances[container].getStyleUrl();
+}
+
+/**
  * Retrieves the terrain options if terrain is loaded.
  * @param {string} container - The identifier of the map container.
  * @returns {Object|undefined} The terrain specification object or undefined if not loaded.
@@ -2666,6 +2688,24 @@ export function setLayerZoomRange(container, layerId, minzoom, maxzoom) {
  */
 export function setGlyphs(container, glyphsUrl, options) {
     mapInstances[container].setGlyphs(glyphsUrl, options);
+}
+
+/**
+ * Sets the style's font-faces property used to render complex scripts (MapLibre 6.7+).
+ * @param {string} container - The map container.
+ * @param {Object|null} fontFaces - The font-faces map, or null to clear it.
+ */
+export function setFontFaces(container, fontFaces) {
+    mapInstances[container].setFontFaces(fontFaces);
+}
+
+/**
+ * Returns the style's font-faces property, or null when it is not set (MapLibre 6.7+).
+ * @param {string} container - The map container.
+ * @returns {Object|null} The font-faces map, or null.
+ */
+export function getFontFaces(container) {
+    return mapInstances[container].getFontFaces();
 }
 
 /**
@@ -3557,6 +3597,28 @@ export async function updateImageSource(container, sourceId, options) {
 export function setRasterPremultiplyAlpha(container, sourceId, premultiplyAlpha) {
     const source = requireSourceWithMethod(container, sourceId, 'setPremultiplyAlpha', 'setRasterPremultiplyAlpha');
     source.setPremultiplyAlpha(!!premultiplyAlpha);
+}
+
+/**
+ * Sets the warp mode of an image source (MapLibre 6.5+).
+ * @param {string} container
+ * @param {string} sourceId
+ * @param {string} warp - 'auto', 'perspective', or 'flat'.
+ */
+export function setSourceWarp(container, sourceId, warp) {
+    const source = requireSourceWithMethod(container, sourceId, 'setWarp', 'setSourceWarp');
+    source.setWarp(warp);
+}
+
+/**
+ * Returns the warp mode of an image source (MapLibre 6.5+).
+ * @param {string} container
+ * @param {string} sourceId
+ * @returns {string} The warp mode.
+ */
+export function getSourceWarp(container, sourceId) {
+    const source = requireSourceWithMethod(container, sourceId, 'getWarp', 'getSourceWarp');
+    return source.getWarp();
 }
 
 /**

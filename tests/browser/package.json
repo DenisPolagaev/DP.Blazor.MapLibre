@@ -9,6 +9,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "maplibre-gl": "6.2.0"
+    "maplibre-gl": "6.11.2"
   }
 }

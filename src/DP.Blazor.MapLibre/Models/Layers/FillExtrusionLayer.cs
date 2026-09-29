@@ -18,6 +18,15 @@ public class FillExtrusionLayerLayout
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonConverter(typeof(OneOfJsonConverter<string>))]
     public OneOf<string, JsonArray>? Visibility { get; set; }
+
+    /// <summary>
+    /// Rounds each fill-extrusion corner with an arc spanning the given distance in meters
+    /// (MapLibre 6.2+). Defaults to <c>0</c> (sharp corners).
+    /// </summary>
+    [JsonPropertyName("fill-extrusion-rounded-corner-distance")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(OneOfJsonConverter<double>))]
+    public OneOf<double, JsonArray>? FillExtrusionRoundedCornerDistance { get; set; }
 }
 
 public class FillExtrusionLayerPaint

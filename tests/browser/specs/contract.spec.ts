@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('MapLibre 6.2 contract suite', () => {
+test.describe('MapLibre 6.11 contract suite', () => {
   test('map options accept v6 names and time API is top-level', async ({ page }) => {
     await page.goto('/');
     await page.waitForFunction(() => !!window.maplibregl);
@@ -181,8 +181,7 @@ test.describe('MapLibre 6.2 contract suite', () => {
     expect(result.ok).toBe(true);
   });
 
-  test('FullscreenControl accepts pseudo option', async ({ page }) => {
-    await page.goto('/');
+  test('FullscreenControl accepts pseudo option', async ({ page }) => {    await page.goto('/');
     await page.waitForFunction(() => !!window.maplibregl);
 
     const result = await page.evaluate(async () => {
@@ -201,5 +200,68 @@ test.describe('MapLibre 6.2 contract suite', () => {
     });
 
     expect(result.hasControl).toBe(true);
+  });
+
+  test('MapLibre 6.5-6.11 APIs used by the wrapper are exposed', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!window.maplibregl);
+
+    const result = await page.evaluate(async () => {
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {
+            overlay: {
+              type: 'image',
+              url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+              coordinates: [
+                [-10, 10],
+                [10, 10],
+                [10, -10],
+                [-10, -10],
+              ],
+            },
+          },
+          layers: [{ id: 'overlay', type: 'raster', source: 'overlay' }],
+        },
+        center: [0, 0],
+        zoom: 1,
+        attributionControl: false,
+      });
+      await map.once('load');
+
+      const anchored = map.calculateAnchoredCameraOptions({
+        anchorLocation: { lng: 10, lat: 20 },
+        anchorScreenPoint: { x: 100, y: 80 },
+        zoom: 4,
+      });
+
+      const overlay = map.getSource('overlay');
+      overlay.setWarp('flat');
+
+      const result = {
+        hasGetStyleUrl: typeof map.getStyleUrl === 'function',
+        hasSetFontFaces: typeof map.setFontFaces === 'function',
+        hasGetFontFaces: typeof map.getFontFaces === 'function',
+        hasCalculateAnchored: typeof map.calculateAnchoredCameraOptions === 'function',
+        hasSetWarp: typeof overlay.setWarp === 'function',
+        styleUrl: typeof map.getStyleUrl === 'function' ? map.getStyleUrl() : 'missing',
+        anchoredZoom: anchored?.zoom ?? null,
+        warp: overlay.getWarp(),
+      };
+
+      map.remove();
+      return result;
+    });
+
+    expect(result.hasGetStyleUrl).toBe(true);
+    expect(result.hasSetFontFaces).toBe(true);
+    expect(result.hasGetFontFaces).toBe(true);
+    expect(result.hasCalculateAnchored).toBe(true);
+    expect(result.hasSetWarp).toBe(true);
+    expect(result.styleUrl).toBeNull();
+    expect(result.anchoredZoom).toBe(4);
+    expect(result.warp).toBe('flat');
   });
 });

@@ -10,7 +10,7 @@ This page is the short path from zero to a running map. For product shape and ar
 dotnet add package DP.Blazor.MapLibre
 ```
 
-Targets: **.NET 8, 9, and 10**. Bundled engine: **MapLibre GL JS 6.2** (ESM + worker). Browsers need **WebGL2**.
+Targets: **.NET 8, 9, and 10**. Bundled engine: **MapLibre GL JS 6.11.2** (ESM + worker). Browsers need **WebGL2**.
 
 ## 2. Include CSS
 

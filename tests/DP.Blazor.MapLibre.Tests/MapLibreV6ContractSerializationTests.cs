@@ -16,7 +16,7 @@ using Xunit;
 namespace DP.Blazor.MapLibre.Tests;
 
 /// <summary>
-/// Contract tests: C# JSON property names and shapes must match MapLibre GL JS 6.2
+/// Contract tests: C# JSON property names and shapes must match MapLibre GL JS 6.11
 /// (<c>MapOptions</c>, sources, controls, RequestParameters, compact event DTOs).
 /// </summary>
 public class MapLibreV6ContractSerializationTests

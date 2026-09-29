@@ -27,6 +27,13 @@ public sealed class StyleSpecification
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Sprite { get; set; }
 
+    /// <summary>
+    /// Font files used to render complex scripts (MapLibre <c>font-faces</c>, 6.7+).
+    /// </summary>
+    [JsonPropertyName("font-faces")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, FontFaceValue>? FontFaces { get; set; }
+
     [JsonPropertyName("sources")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, ISource>? Sources { get; set; }

@@ -1386,6 +1386,15 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await InvokeMapJsAsync<CenterZoomBearing>("cameraForBounds", JsContainerId, bounds, options);
 
     /// <summary>
+    /// Calculates the camera options that place a geographic anchor at a screen position without
+    /// moving the map (MapLibre 6.11+).
+    /// </summary>
+    /// <param name="options">The anchor location, screen point, and optional zoom.</param>
+    /// <returns>A task that resolves to the calculated <see cref="CameraOptions"/>.</returns>
+    public async ValueTask<CameraOptions> CalculateAnchoredCameraOptions(AnchoredCameraOptions options) =>
+        await InvokeMapJsAsync<CameraOptions>("calculateAnchoredCameraOptions", JsContainerId, options);
+
+    /// <summary>
     /// Smoothly transitions the camera's view to the specified target, animating parameters such as
     /// center, zoom, bearing, pitch, roll, and padding. Any unspecified parameters will retain their current values.
     /// </summary>
@@ -1851,6 +1860,26 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// </summary>
     public async ValueTask<JsonElement> GetStyleAsJsonElement() =>
         await InvokeMapJsAsync<JsonElement>("getStyle", JsContainerId);
+
+    /// <summary>
+    /// Returns the URL the style was loaded from, or <c>null</c> when the style was given as an object
+    /// (MapLibre 6.8+).
+    /// </summary>
+    public async ValueTask<string?> GetStyleUrl() =>
+        await InvokeMapJsAsync<string?>("getStyleUrl", JsContainerId);
+
+    /// <summary>
+    /// Sets the style's <c>font-faces</c> property, which points at the font files used to render
+    /// complex scripts (MapLibre 6.7+). Pass <c>null</c> to clear it.
+    /// </summary>
+    public async ValueTask SetFontFaces(Dictionary<string, FontFaceValue>? fontFaces) =>
+        await InvokeMapJsVoidAsync("setFontFaces", JsContainerId, fontFaces);
+
+    /// <summary>
+    /// Returns the style's <c>font-faces</c> property, or <c>null</c> when it is not set (MapLibre 6.7+).
+    /// </summary>
+    public async ValueTask<Dictionary<string, FontFaceValue>?> GetFontFaces() =>
+        await InvokeMapJsAsync<Dictionary<string, FontFaceValue>?>("getFontFaces", JsContainerId);
 
     /// <summary>
     /// Retrieves the terrain options if terrain is loaded.
@@ -3110,6 +3139,24 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
         return InvokeMapJsVoidAsync("setRasterPremultiplyAlpha", JsContainerId, sourceId, premultiplyAlpha);
+    }
+
+    /// <summary>
+    /// Sets the warp mode of an image source (MapLibre <c>ImageSource.setWarp</c>, 6.5+).
+    /// </summary>
+    public ValueTask SetSourceWarpAsync(string sourceId, ImageSourceWarp warp)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return InvokeMapJsVoidAsync("setSourceWarp", JsContainerId, sourceId, warp);
+    }
+
+    /// <summary>
+    /// Returns the warp mode of an image source (MapLibre <c>ImageSource.getWarp</c>, 6.5+).
+    /// </summary>
+    public ValueTask<ImageSourceWarp?> GetSourceWarpAsync(string sourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        return InvokeMapJsAsync<ImageSourceWarp?>("getSourceWarp", JsContainerId, sourceId);
     }
 
     /// <summary>

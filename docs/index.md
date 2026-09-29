@@ -22,7 +22,7 @@ The project **started as a fork** of [Yet-another-solution/Blazor.MapLibre](http
 | --- | --- |
 | .NET | Library and plugins target **.NET 8 / 9 / 10**. Examples and this DocFX site use **.NET 10**. |
 | Browser | **WebGL2** required (MapLibre GL JS 6 dropped the WebGL1 path). |
-| Bundled MapLibre | **6.2.0** as ESM (`maplibre-gl.mjs` + worker), loaded by the component via `prepareMapLibreGl`. |
+| Bundled MapLibre | **6.11.2** as ESM (`maplibre-gl.mjs` + worker), loaded by the component via `prepareMapLibreGl`. |
 
 Do **not** add a classic `<script src="…/maplibre-gl.js">` tag — the component owns JS loading.
 

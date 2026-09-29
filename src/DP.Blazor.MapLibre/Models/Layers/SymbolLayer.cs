@@ -537,6 +537,24 @@ public class SymbolLayerLayout
     [JsonConverter(typeof(OneOfJsonConverter<bool>))]
     public OneOf<bool, JsonArray>? TextOptional { get; set; }
 
+    /// <summary>
+    /// Raises the icon and text above the map by the given number of meters (MapLibre 6.6+).
+    /// Defaults to <c>0</c>.
+    /// </summary>
+    [JsonPropertyName("symbol-height-offset")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(OneOfJsonConverter<double>))]
+    public OneOf<double, JsonArray>? SymbolHeightOffset { get; set; }
+
+    /// <summary>
+    /// Selects whether <c>symbol-height-offset</c> is measured from the terrain surface
+    /// (<c>ground</c>, default) or from the zero elevation datum (<c>absolute</c>) (MapLibre 6.6+).
+    /// </summary>
+    [JsonPropertyName("symbol-height-anchor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(OneOfJsonConverter<string>))]
+    public OneOf<string, JsonArray>? SymbolHeightAnchor { get; set; }
+
     [JsonPropertyName("visibility")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonConverter(typeof(OneOfJsonConverter<string>))]
