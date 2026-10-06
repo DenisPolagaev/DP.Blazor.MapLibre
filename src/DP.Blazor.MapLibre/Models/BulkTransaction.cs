@@ -11,6 +11,9 @@ public class BulkTransaction
 {
     public List<Transaction> Transactions { get; } = [];
 
+    [JsonIgnore]
+    internal Dictionary<string, int>? CoalesceIndex { get; set; }
+
     public void Add(string eventName, params object?[]? data)
     {
         Transactions.Add(new Transaction

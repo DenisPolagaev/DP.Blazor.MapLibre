@@ -162,18 +162,61 @@ public static class BulkTransactionCoalescer
         var key = Key(eventName, data);
         if (key is not null)
         {
-            var existing = transaction.Transactions.FindIndex(item => Key(item.Event, item.Data) == key);
-            if (existing >= 0)
+            var index = transaction.CoalesceIndex ?? BuildIndex(transaction);
+            var found = index.TryGetValue(key, out var existing);
+
+            // The cached index can go stale if the list was mutated outside Enqueue;
+            // fall back to a linear scan so coalescing never drops the wrong entry.
+            if (found
+                && (existing >= transaction.Transactions.Count
+                    || Key(transaction.Transactions[existing].Event, transaction.Transactions[existing].Data) != key))
+            {
+                existing = transaction.Transactions.FindIndex(item => Key(item.Event, item.Data) == key);
+                found = existing >= 0;
+            }
+
+            if (found)
             {
                 transaction.Transactions.RemoveAt(existing);
+                index.Remove(key);
+                foreach (var entry in index.ToArray())
+                {
+                    if (entry.Value > existing)
+                    {
+                        index[entry.Key] = entry.Value - 1;
+                    }
+                }
             }
+
+            transaction.CoalesceIndex = index;
         }
 
         transaction.Add(eventName, data);
+
+        if (key is not null)
+        {
+            transaction.CoalesceIndex![key] = transaction.Transactions.Count - 1;
+        }
+    }
+
+    private static Dictionary<string, int> BuildIndex(BulkTransaction transaction)
+    {
+        var index = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var position = 0; position < transaction.Transactions.Count; position++)
+        {
+            var key = Key(transaction.Transactions[position].Event, transaction.Transactions[position].Data);
+            if (key is not null)
+            {
+                index[key] = position;
+            }
+        }
+
+        return index;
     }
 
     public static void Coalesce(BulkTransaction transaction)
     {
+        transaction.CoalesceIndex = null;
         var lastIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < transaction.Transactions.Count; index++)
         {

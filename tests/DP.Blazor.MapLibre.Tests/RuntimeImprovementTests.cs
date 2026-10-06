@@ -43,6 +43,36 @@ public class RuntimeImprovementTests
     }
 
     [Fact]
+    public void BulkTransactionCoalescer_Enqueue_Matches_Append_Then_Coalesce()
+    {
+        var enqueued = new BulkTransaction();
+        var appended = new BulkTransaction();
+
+        var sequence = new (string Event, object?[] Data)[]
+        {
+            ("setSourceData", ["a", "1"]),
+            ("addLayer", ["layer-b"]),
+            ("setSourceData", ["c", "1"]),
+            ("setSourceData", ["b", "2"]),
+            ("setSourceData", ["a", "3"]),
+            ("setPaintProperty", ["layer-b", "icon-opacity", 0.5]),
+        };
+
+        foreach (var (eventName, data) in sequence)
+        {
+            BulkTransactionCoalescer.Enqueue(enqueued, eventName, data);
+            appended.Add(eventName, data);
+        }
+
+        BulkTransactionCoalescer.Coalesce(appended);
+
+        var enqueuedKeys = enqueued.Transactions.Select(item => $"{item.Event}:{item.Data![0]}").ToArray();
+        var appendedKeys = appended.Transactions.Select(item => $"{item.Event}:{item.Data![0]}").ToArray();
+
+        enqueuedKeys.Should().Equal(appendedKeys);
+    }
+
+    [Fact]
     public void ClusterLayerSet_Creates_Cluster_And_Point_Layers()
     {
         var collection = new FeatureCollection

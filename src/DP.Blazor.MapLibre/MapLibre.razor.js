@@ -1,6 +1,5 @@
 import splitGeoJSON from './geojson-antimeridian-cut/cut.js'
 import {
-    coalesceTransactions,
     disposeOverlay,
     disposeSkipCache,
     forgetImage,
@@ -3350,7 +3349,9 @@ export function removeCurrentLocationMarker(container) {
  * @param {object} data - Options for animation like duration, offset, etc.
  */
 export async function executeTransaction(container, data) {
-    const transactions = coalesceTransactions(Array.isArray(data) ? data : []);
+    // The C# side already coalesces the batch (BulkTransactionCoalescer.Coalesce),
+    // so no second pass is needed here.
+    const transactions = Array.isArray(data) ? data : [];
     for (const d of transactions) {
         switch (d.event) {
             case "addControl":
