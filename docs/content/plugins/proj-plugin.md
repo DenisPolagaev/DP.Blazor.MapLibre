@@ -137,5 +137,5 @@ var importMap = await _proj.GetImportMapAsync();      // resolved specifier -> _
 ## Related topics
 
 - [Projection example](./examples/proj.md) — live demo
-- [Create a plugin](../getting-started/create-a-plugin.md) — build your own plugin from scratch
+- [Create a plugin](./create-a-plugin.md) — build your own plugin from scratch
 - [Key concepts](../getting-started/key-concepts.md#plugin-system) — plugin architecture overview

@@ -215,6 +215,6 @@ Use `TerraDrawFinishEventArgs` and `TerraDrawChangeEventArgs` for strongly typed
 
 ## Related topics
 
-- [Create a plugin](../getting-started/create-a-plugin.md) — build your own plugin from scratch
+- [Create a plugin](./create-a-plugin.md) — build your own plugin from scratch
 - [Key concepts](../getting-started/key-concepts.md#plugin-system) — plugin architecture overview
 - [Terra Draw example](./examples/terra-draw.md) — live demo

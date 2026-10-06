@@ -37,6 +37,8 @@ dotnet add package DP.Blazor.MapLibre.MinimapPlugin
 dotnet add package DP.Blazor.MapLibre.FrameratePlugin
 dotnet add package DP.Blazor.MapLibre.GeoGridPlugin
 dotnet add package DP.Blazor.MapLibre.StarfieldPlugin
+dotnet add package DP.Blazor.MapLibre.PmtilesPlugin
+dotnet add package DP.Blazor.MapLibre.ProjPlugin
 ```
 
 Add MapLibre CSS in your app:
@@ -69,6 +71,8 @@ npm ci
 npx playwright install chromium
 npm test
 ```
+
+## Usage
 
 ```razor
 <MapLibre Options="_mapOptions" />
