@@ -82,17 +82,11 @@ jobs:
             VERSION_ARG="/p:Version=${{ steps.version.outputs.version }}"
           fi
           dotnet build src/DP.Blazor.MapLibre/DP.Blazor.MapLibre.csproj --no-restore -c Release /p:ContinuousIntegrationBuild=true $VERSION_ARG
-          for proj in \
-            src/plugins/DP.Blazor.MapLibre.TerraDrawPlugin/DP.Blazor.MapLibre.TerraDrawPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.MapLibre.ProjPlugin.csproj
-          do
+          # Glob discovers plugins automatically; a new src/plugins/**/*.csproj is built without editing CI.
+          for proj in src/plugins/*/*.csproj; do
+            echo "::group::Build $proj"
             dotnet build "$proj" --no-restore -c Release /p:ContinuousIntegrationBuild=true $VERSION_ARG
+            echo "::endgroup::"
           done
 
       - name: Build and run tests
@@ -112,18 +106,10 @@ jobs:
         run: |
           mkdir -p nuget
           VERSION_ARG="/p:Version=${{ steps.version.outputs.version }}"
-          for proj in \
-            src/DP.Blazor.MapLibre/DP.Blazor.MapLibre.csproj \
-            src/plugins/DP.Blazor.MapLibre.TerraDrawPlugin/DP.Blazor.MapLibre.TerraDrawPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.MinimapPlugin/DP.Blazor.MapLibre.MinimapPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.FrameratePlugin/DP.Blazor.MapLibre.FrameratePlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazor.MapLibre.GeoGridPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.StarfieldPlugin/DP.Blazor.MapLibre.StarfieldPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.PmtilesPlugin/DP.Blazor.MapLibre.PmtilesPlugin.csproj \
-            src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.MapLibre.ProjPlugin.csproj
-          do
+          for proj in src/DP.Blazor.MapLibre/DP.Blazor.MapLibre.csproj src/plugins/*/*.csproj; do
+            echo "::group::Pack $proj"
             dotnet pack "$proj" -c Release --no-build --output nuget $VERSION_ARG
+            echo "::endgroup::"
           done
           ls -la nuget
 
