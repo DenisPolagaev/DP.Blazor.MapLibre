@@ -6,6 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <!-- Guard tests locate repo files via [CallerFilePath]; CI builds with
+             ContinuousIntegrationBuild=true, which otherwise rewrites those paths to /_/. -->
+        <DeterministicSourcePaths>false</DeterministicSourcePaths>
     </PropertyGroup>
 
     <ItemGroup>
