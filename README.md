@@ -49,7 +49,7 @@ Add MapLibre CSS in your app:
 
 The JS bundle is ESM (`maplibre-gl.mjs` + worker) and is loaded by the component via `prepareMapLibreGl`. Do not use a classic `<script src="…/maplibre-gl.js">` tag.
 
-Targets: **.NET 8 / 9 / 10**. Bundled MapLibre GL JS: **6.11.2** (ESM: `maplibre-gl.mjs` + worker, restored via LibMan). The bundled version is exposed as `MapLibreGl.Version`.
+Targets: the core library targets **.NET 8 / 9 / 10**; the optional plugins additionally target **.NET 11** (preview). Bundled MapLibre GL JS: **6.11.2** (ESM: `maplibre-gl.mjs` + worker, restored via LibMan). The bundled version is exposed as `MapLibreGl.Version`.
 
 ### Static-host requirements
 

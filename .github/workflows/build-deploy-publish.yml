@@ -38,6 +38,14 @@ jobs:
             9.0.x
             10.0.x
 
+      # .NET 11 preview is required to build the net11.0 target of the plugins.
+      # global.json rolls forward to it (allowPrerelease: true, rollForward: latestMajor).
+      - name: Setup .NET 11 (preview)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
       - name: Resolve package version
         id: version
         shell: bash

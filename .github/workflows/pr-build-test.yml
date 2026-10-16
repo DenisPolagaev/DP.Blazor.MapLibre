@@ -73,6 +73,13 @@ jobs:
             9.0.x
             10.0.x
 
+      # .NET 11 preview is required to build the net11.0 target of the plugins.
+      - name: Setup .NET 11 (preview)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
       - name: Restore dependencies
         run: dotnet restore DP.Blazor.MapLibre.slnx
 
@@ -95,6 +102,13 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+
+      # .NET 11 preview is required to build the net11.0 target of the plugins.
+      - name: Setup .NET 11 (preview)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
 
       - name: Restore dependencies
         run: dotnet restore DP.Blazor.MapLibre.slnx
