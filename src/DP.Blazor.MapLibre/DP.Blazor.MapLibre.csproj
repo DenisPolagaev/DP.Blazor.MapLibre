@@ -12,10 +12,15 @@
         <!-- Generate XML documentation file -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>1591</NoWarn> <!-- Suppresses missing XML comment warnings -->
+
+        <!-- Single source of truth for the bundled MapLibre GL JS version. -->
+        <MapLibreGlVersionFile>$(MSBuildProjectDirectory)\maplibre-gl.version</MapLibreGlVersionFile>
+        <MapLibreGlVersionResourceName>DP.Blazor.MapLibre.MapLibreGlVersion</MapLibreGlVersionResourceName>
     </PropertyGroup>
 
     <ItemGroup>
         <SupportedPlatform Include="browser" />
+        <EmbeddedResource Include="$(MapLibreGlVersionFile)" LogicalName="$(MapLibreGlVersionResourceName)" />
     </ItemGroup>
 
     <ItemGroup>
@@ -41,4 +46,26 @@
         <Content Remove="libman.json" />
         <None Include="libman.json" />
     </ItemGroup>
+
+    <!--
+      When bumping MapLibre GL JS, edit maplibre-gl.version first, then make libman.json
+      and ts/package.json agree. This target fails the build on drift so the bundler,
+      the TypeScript types and the JS cache-busting token can never get out of sync.
+    -->
+    <Target Name="ValidateMapLibreGlVersion" BeforeTargets="PrepareForBuild">
+        <ReadLinesFromFile File="$(MapLibreGlVersionFile)">
+            <Output TaskParameter="Lines" ItemName="_MapLibreGlVersionLines" />
+        </ReadLinesFromFile>
+        <PropertyGroup>
+            <MapLibreGlVersion>@(_MapLibreGlVersionLines)</MapLibreGlVersion>
+            <_LibManJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\libman.json'))</_LibManJson>
+            <_TsPackageJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\ts\package.json'))</_TsPackageJson>
+        </PropertyGroup>
+        <Error Condition="'$(MapLibreGlVersion)' == ''"
+               Text="maplibre-gl.version is empty or missing. It must contain the bundled MapLibre GL JS version, e.g. 6.11.2." />
+        <Error Condition="!$(_LibManJson.Contains('&quot;maplibre-gl@$(MapLibreGlVersion)&quot;'))"
+               Text="libman.json must reference maplibre-gl@$(MapLibreGlVersion) to match maplibre-gl.version." />
+        <Error Condition="!$(_TsPackageJson.Contains('&quot;maplibre-gl&quot;: &quot;$(MapLibreGlVersion)&quot;'))"
+               Text="ts/package.json must pin maplibre-gl to $(MapLibreGlVersion) to match maplibre-gl.version." />
+    </Target>
 </Project>

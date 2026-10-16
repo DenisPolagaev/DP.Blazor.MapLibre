@@ -49,7 +49,12 @@ Add MapLibre CSS in your app:
 
 The JS bundle is ESM (`maplibre-gl.mjs` + worker) and is loaded by the component via `prepareMapLibreGl`. Do not use a classic `<script src="…/maplibre-gl.js">` tag.
 
-Targets: **.NET 8 / 9 / 10**. Bundled MapLibre GL JS: **6.11.2** (ESM: `maplibre-gl.mjs` + worker, restored via LibMan).
+Targets: **.NET 8 / 9 / 10**. Bundled MapLibre GL JS: **6.11.2** (ESM: `maplibre-gl.mjs` + worker, restored via LibMan). The bundled version is exposed as `MapLibreGl.Version`.
+
+### Static-host requirements
+
+- **Serve `.mjs` as JavaScript.** The bundle is loaded with `import()` and the worker with `new Worker(..., { type: "module" })`; both are rejected if the host serves `.mjs` with a non-JS MIME type (`application/octet-stream`). ASP.NET Core serves `.mjs` correctly out of the box. For IIS add `<mimeMap fileExtension=".mjs" mimeType="text/javascript" />`; for nginx include `mime.types` or add `types { text/javascript mjs; }`.
+- **Cache-busting.** The ESM import and the worker URL are suffixed with `?v=<MapLibreGl.Version>` so hosts that cache `_content` assets immutably (`Cache-Control: public, max-age=31536000, immutable`) still fetch the new bundle after a library upgrade.
 
 ## Typed interop facade
 

@@ -30,14 +30,22 @@ const popupContainers = globalThis.__blazorMapLibrePopupContainers ??= {};
 const scaleControlInstances = globalThis.__blazorMapLibreScaleControls ??= {};
 const listenerRegistry = globalThis.__blazorMapLibreListenerRegistry ??= {};
 
+const mapLibreGlBase = './maplibre-gl/dist/';
+const mapLibreGlMain = `${mapLibreGlBase}maplibre-gl.mjs`;
+const mapLibreGlWorker = `${mapLibreGlBase}maplibre-gl-worker.mjs`;
+
 /**
  * Ensures maplibre-gl is on globalThis before creating maps.
  * MapLibre GL JS v6 is ESM-only; we copy the exports into an extensible object
  * on globalThis so plugins and existing interop that expect window.maplibregl
  * keep working (UMD plugins mutate window.maplibregl).
  * Does not load any plugins.
+ *
+ * @param {string} [bundleVersion] Version of the bundled MapLibre GL JS (see
+ *   MapLibreGl.Version). Appended as a query string so hosts that serve RCL
+ *   assets immutably (max-age=1y) still fetch a new bundle on upgrade.
  */
-export async function prepareMapLibreGl() {
+export async function prepareMapLibreGl(bundleVersion) {
     if (globalThis.maplibregl?.Map) {
         // ESM namespace objects are sealed: replace an existing namespace so
         // plugins can still attach globals (e.g. maplibre-gl-compare's Compare).
@@ -48,7 +56,9 @@ export async function prepareMapLibreGl() {
         return;
     }
 
-    const maplibre = await import('./maplibre-gl/dist/maplibre-gl.mjs');
+    const versionQuery = bundleVersion ? `?v=${encodeURIComponent(bundleVersion)}` : '';
+
+    const maplibre = await import(mapLibreGlMain + versionQuery);
     // Copy exports into a plain extensible object. Assigning the module namespace
     // directly makes window.maplibregl read-only, so UMD plugins that do
     // `maplibregl.Compare = ...` throw in strict mode.
@@ -57,6 +67,12 @@ export async function prepareMapLibreGl() {
     if (!globalThis.maplibregl?.Map) {
         throw new Error('MapLibre GL JS is not available on globalThis.maplibregl');
     }
+
+    // MapLibre resolves its worker relative to the main module URL, which drops
+    // the cache-busting query. Point it at the worker explicitly and carry the
+    // version through so the worker is busted too.
+    globalThis.maplibregl.setWorkerUrl(
+        new URL(mapLibreGlWorker + versionQuery, import.meta.url).href);
 }
 
 /**

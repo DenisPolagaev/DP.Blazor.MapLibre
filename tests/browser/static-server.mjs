@@ -8,10 +8,14 @@ const root = path.join(__dirname, 'fixtures');
 const port = Number(process.env.PORT || 4173);
 
 // Serve the real RCL wwwroot trees under their Blazor static web asset paths so the
-// browser specs exercise the same URLs a Blazor host would use.
+// browser specs exercise the same URLs a Blazor host would use. Component-scoped JS
+// (MapLibre.razor.js) lives at the project root and is served under _content too.
 const assetMounts = [
-  ['/_content/DP.Blazor.MapLibre/', path.join(__dirname, '..', '..', 'src', 'DP.Blazor.MapLibre', 'wwwroot')],
-  ['/_content/ProjPlugin/', path.join(__dirname, '..', '..', 'src', 'plugins', 'DP.Blazor.MapLibre.ProjPlugin', 'wwwroot')],
+  ['/_content/DP.Blazor.MapLibre/', [
+    path.join(__dirname, '..', '..', 'src', 'DP.Blazor.MapLibre', 'wwwroot'),
+    path.join(__dirname, '..', '..', 'src', 'DP.Blazor.MapLibre'),
+  ]],
+  ['/_content/ProjPlugin/', [path.join(__dirname, '..', '..', 'src', 'plugins', 'DP.Blazor.MapLibre.ProjPlugin', 'wwwroot')]],
 ];
 
 const mime = {
@@ -29,11 +33,13 @@ const mime = {
 };
 
 function resolveFile(urlPath) {
-  for (const [prefix, base] of assetMounts) {
+  for (const [prefix, bases] of assetMounts) {
     if (urlPath.startsWith(prefix)) {
       const rel = urlPath.slice(prefix.length);
-      const file = path.normalize(path.join(base, rel));
-      if (file.startsWith(base)) return file;
+      for (const base of bases) {
+        const file = path.normalize(path.join(base, rel));
+        if (file.startsWith(base) && fs.existsSync(file)) return file;
+      }
       return null;
     }
   }
