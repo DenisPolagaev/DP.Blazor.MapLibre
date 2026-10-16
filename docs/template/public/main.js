@@ -60,7 +60,14 @@ async function prepareMapLibreGlobal(mapLibreContent) {
         return;
     }
 
-    const maplibre = await import(`${mapLibreContent}maplibre-gl/dist/maplibre-gl.mjs`);
+    // Module specifiers resolve against this module's URL (public/main.js), not the
+    // document, so a page-relative or bare specifier cannot find the site root.
+    // Resolve against <base> (set by ensureSiteBaseHref) to locate _content.
+    const bundleUrl = new URL(
+        `${mapLibreContent}maplibre-gl/dist/maplibre-gl.mjs`,
+        document.baseURI).href;
+
+    const maplibre = await import(bundleUrl);
     globalThis.maplibregl = maplibre;
 }
 
