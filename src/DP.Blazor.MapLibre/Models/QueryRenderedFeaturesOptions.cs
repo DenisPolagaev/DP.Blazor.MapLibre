@@ -25,6 +25,13 @@ public sealed class QueryRenderedFeaturesOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? AvailableImages { get; set; }
 
+    /// <summary>
+    /// When true, each returned feature includes its geometry. Defaults to false: MapLibre expands vector-tile geometry
+    /// on access, so geometry is only crossed to .NET on request.
+    /// </summary>
+    [JsonPropertyName("includeGeometry")]
+    public bool IncludeGeometry { get; set; }
+
     [JsonPropertyName("validate")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Validate { get; set; }

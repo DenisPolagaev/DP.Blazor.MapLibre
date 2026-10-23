@@ -1,6 +1,17 @@
-const compareRelativeBase = '_content/MapComparePlugin/maplibre-gl-compare/dist/';
-const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
-const pluginStylesheet = '_content/MapComparePlugin/ComparePlugin.css';
+// Map compare (swipe) plugin backed by maplibre-gl-compare.
+// Served as _content/MapComparePlugin/ComparePlugin.js. ComparePlugin.cs imports it through
+// MapLibrePluginModules, which prepares the maplibregl global before this module is evaluated.
+//
+// State: no module-level state. Each (before map, plugin instance) pair keeps its control and
+// slide-end listeners in getMapState, so several maps and several plugin instances stay isolated.
+
+import { getMap, resize } from '../DP.Blazor.MapLibre/MapLibre.razor.js';
+import { getMapState, peekMapState, deleteMapState, loadStylesheet, loadScript } from '../DP.Blazor.MapLibre/PluginRuntime.js';
+
+const compareScriptUrl = new URL('./maplibre-gl-compare/dist/maplibre-gl-compare.js', import.meta.url).href;
+const compareStylesheetUrl = new URL('./maplibre-gl-compare/dist/maplibre-gl-compare.css', import.meta.url).href;
+const pluginStylesheetUrl = new URL('./ComparePlugin.css', import.meta.url).href;
+const stateNamespace = 'compare:';
 
 const defaultHandleOptions = {
     cssClass: null,
@@ -30,121 +41,67 @@ const handleIcons = {
     </svg>`,
 };
 
-let compareControl = null;
-let compareContainerElement = null;
-let dependenciesLoaded = false;
-let mapLibreModulePromise = null;
+// Attributes that can carry a script URL in customIconHtml.
+const urlAttributes = new Set(['href', 'src', 'xlink:href', 'action', 'formaction']);
 
-function contentUrl(relativePath) {
-    return new URL(relativePath, document.baseURI).href;
+function createState() {
+    return {
+        control: null,
+        container: null,
+        // listenerId -> { handler }; kept while the plugin instance lives on this map, so subscriptions
+        // are re-attached when the control is created again.
+        listeners: new Map(),
+        nextListenerId: 1,
+    };
 }
 
-function findLoadedScript(absoluteUrl) {
-    return [...document.scripts].find((script) => script.src === absoluteUrl);
+function stateKey(instanceKey) {
+    return `${stateNamespace}${instanceKey}`;
 }
 
-function removeLoadedScript(absoluteUrl) {
-    findLoadedScript(absoluteUrl)?.remove();
-}
-
-function loadStylesheet(relativePath) {
-    const href = contentUrl(relativePath);
-    if (document.querySelector(`link[href="${href}"]`)) {
-        return;
+function requireMap(mapId) {
+    const map = getMap(mapId);
+    if (!map) {
+        throw new Error(`Map "${mapId}" was not found`);
     }
 
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    document.head.appendChild(link);
+    return map;
 }
 
-function loadClassicScript(relativePath, forceReload = false) {
-    const src = contentUrl(relativePath);
-
-    if (forceReload) {
-        removeLoadedScript(src);
-    } else if (findLoadedScript(src)) {
-        return Promise.resolve();
-    }
-
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error(`Failed to load ${src}`));
-        document.head.appendChild(script);
-    });
+function findState(mapId, instanceKey) {
+    const map = getMap(mapId);
+    return map ? peekMapState(map, stateKey(instanceKey)) : undefined;
 }
 
-function getMapLibreModule() {
-    if (!mapLibreModulePromise) {
-        mapLibreModulePromise = import(contentUrl(mapLibreModulePath));
+function resolveContainer(container) {
+    const element = typeof container === 'string'
+        ? document.querySelector(container)
+        : container;
+
+    if (!element) {
+        throw new Error(`Compare container "${container}" was not found`);
     }
 
-    return mapLibreModulePromise;
+    return element;
+}
+
+async function loadDependencies() {
+    if (!globalThis.maplibregl?.Map) {
+        throw new Error('MapLibre GL JS is not prepared. Load the plugin through MapLibrePluginModules.');
+    }
+
+    await Promise.all([
+        loadStylesheet('maplibre-gl-compare', compareStylesheetUrl),
+        loadStylesheet('blazor-compare-plugin', pluginStylesheetUrl),
+    ]);
+
+    // The UMD bundle assigns maplibregl.Compare; loadScript resolves only once that global exists.
+    await loadScript('maplibre-gl-compare', compareScriptUrl, () => Boolean(globalThis.maplibregl?.Compare));
 }
 
 async function waitForLayout() {
     await new Promise((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
-async function ensureMapLibreGlobal() {
-    if (globalThis.maplibregl?.Map) {
-        return;
-    }
-
-    // MapLibre GL JS v6 is ESM-only; reuse the wrapper's prepare helper.
-    const mapLibre = await getMapLibreModule();
-    await mapLibre.prepareMapLibreGl();
-
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS failed to load');
-    }
-}
-
-async function ensureCompareAttached() {
-    if (globalThis.maplibregl?.Compare) {
-        return;
-    }
-
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS must be loaded before maplibre-gl-compare');
-    }
-
-    // The compare UMD bundle does `maplibregl.Compare = ...`. MapLibre GL JS v6
-    // ships as an ESM namespace, which is sealed; copy it so the assignment works.
-    if (!Object.isExtensible(globalThis.maplibregl)) {
-        globalThis.maplibregl = { ...globalThis.maplibregl };
-    }
-
-    const compareScript = `${compareRelativeBase}maplibre-gl-compare.js`;
-    await loadClassicScript(compareScript);
-
-    if (!globalThis.maplibregl?.Compare) {
-        await loadClassicScript(compareScript, true);
-    }
-
-    if (!globalThis.maplibregl?.Compare) {
-        throw new Error('maplibre-gl-compare failed to attach to window.maplibregl');
-    }
-}
-
-async function loadDependencies() {
-    if (!globalThis.maplibregl?.Compare) {
-        dependenciesLoaded = false;
-    }
-
-    if (dependenciesLoaded && globalThis.maplibregl?.Compare) {
-        return;
-    }
-
-    await ensureMapLibreGlobal();
-    loadStylesheet(`${compareRelativeBase}maplibre-gl-compare.css`);
-    loadStylesheet(pluginStylesheet);
-    await ensureCompareAttached();
-    dependenciesLoaded = true;
 }
 
 function mergeHandleOptions(handle) {
@@ -160,11 +117,31 @@ function setCssVariable(element, name, value) {
     }
 }
 
-function applyHandleOptions(containerElement, handle) {
-    if (!containerElement) {
-        return;
-    }
+/**
+ * Returns the DOM nodes of customIconHtml. The HTML is developer-supplied and trusted, but <script> elements,
+ * on* event-handler attributes and javascript: URLs are removed before insertion, so an accidental attribute
+ * cannot run code. Built-in icons are static strings and are not passed through this function.
+ */
+function toSafeIconFragment(html) {
+    const template = document.createElement('template');
+    template.innerHTML = html;
 
+    const fragment = template.content;
+    fragment.querySelectorAll('script').forEach((element) => element.remove());
+    fragment.querySelectorAll('*').forEach((element) => {
+        for (const attribute of [...element.attributes]) {
+            const name = attribute.name.toLowerCase();
+            const value = attribute.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+            if (name.startsWith('on') || (urlAttributes.has(name) && value.startsWith('javascript:'))) {
+                element.removeAttribute(attribute.name);
+            }
+        }
+    });
+
+    return fragment;
+}
+
+function applyHandleOptions(containerElement, handle) {
     const options = mergeHandleOptions(handle);
     containerElement.classList.add('blazor-maplibre-compare');
 
@@ -191,10 +168,11 @@ function applyHandleOptions(containerElement, handle) {
     const iconName = (options.icon ?? 'chevrons').toLowerCase();
     swiper.innerHTML = '';
 
+    const icon = document.createElement('span');
+    icon.className = 'blazor-compare-handle-icon';
+
     if (options.customIconHtml) {
-        const icon = document.createElement('span');
-        icon.className = 'blazor-compare-handle-icon';
-        icon.innerHTML = options.customIconHtml;
+        icon.append(toSafeIconFragment(options.customIconHtml));
         swiper.appendChild(icon);
         return;
     }
@@ -203,8 +181,6 @@ function applyHandleOptions(containerElement, handle) {
         return;
     }
 
-    const icon = document.createElement('span');
-    icon.className = 'blazor-compare-handle-icon';
     icon.innerHTML = handleIcons[iconName] ?? handleIcons.chevrons;
     swiper.appendChild(icon);
 }
@@ -225,87 +201,85 @@ function clearHandleOptions(containerElement) {
     containerElement.style.removeProperty('--blazor-compare-line-width');
 }
 
+/** Removes the control of a state and its listeners from it. Listener records are kept. */
+function detachControl(state) {
+    if (!state.control) {
+        return;
+    }
+
+    for (const entry of state.listeners.values()) {
+        state.control.off('slideend', entry.handler);
+    }
+
+    clearHandleOptions(state.container);
+    state.control.remove();
+    state.control = null;
+    state.container = null;
+}
+
+/** Called by the base module loader; the map argument is not needed here. */
 export async function initialize() {
     await loadDependencies();
 }
 
-export async function mapsReady(beforeMapId, afterMapId) {
-    const { getMap } = await getMapLibreModule();
+export function mapsReady(beforeMapId, afterMapId) {
     return Boolean(getMap(beforeMapId) && getMap(afterMapId));
 }
 
-export async function createCompare(beforeMapId, afterMapId, container, options) {
+export async function createCompare(beforeMapId, afterMapId, instanceKey, container, options) {
     await loadDependencies();
 
-    const Compare = globalThis.maplibregl?.Compare;
-    if (!Compare) {
-        throw new Error('maplibre-gl-compare is not loaded');
-    }
-
-    const { getMap, resize } = await getMapLibreModule();
-    const beforeMap = getMap(beforeMapId);
-    const afterMap = getMap(afterMapId);
-
-    if (!beforeMap) {
-        throw new Error(`Before map "${beforeMapId}" was not found`);
-    }
-
-    if (!afterMap) {
-        throw new Error(`After map "${afterMapId}" was not found`);
-    }
-
-    const containerElement = typeof container === 'string'
-        ? document.querySelector(container)
-        : container;
-
-    if (!containerElement) {
-        throw new Error(`Compare container "${container}" was not found`);
-    }
+    const beforeMap = requireMap(beforeMapId);
+    const afterMap = requireMap(afterMapId);
+    const containerElement = resolveContainer(container);
 
     resize(beforeMapId);
     resize(afterMapId);
     await waitForLayout();
 
-    if (compareControl) {
-        clearHandleOptions(compareContainerElement);
-        compareControl.remove();
-        compareControl = null;
-        compareContainerElement = null;
-    }
+    const state = getMapState(beforeMap, stateKey(instanceKey), createState);
+    detachControl(state);
 
-    compareControl = new Compare(beforeMap, afterMap, containerElement, {
+    const Compare = globalThis.maplibregl.Compare;
+    const control = new Compare(beforeMap, afterMap, containerElement, {
         mousemove: options?.mousemove ?? false,
         orientation: options?.orientation ?? 'vertical',
     });
 
-    compareContainerElement = containerElement;
+    state.control = control;
+    state.container = containerElement;
+
+    for (const entry of state.listeners.values()) {
+        control.on('slideend', entry.handler);
+    }
+
     applyHandleOptions(containerElement, options?.handle);
 
     resize(beforeMapId);
     resize(afterMapId);
 
-    return compareControl.currentPosition ?? 0;
+    return control.currentPosition ?? 0;
 }
 
-export function getCurrentPosition() {
-    return compareControl?.currentPosition ?? 0;
+export function getCurrentPosition(mapId, instanceKey) {
+    return findState(mapId, instanceKey)?.control?.currentPosition ?? 0;
 }
 
 /**
  * @returns {{ position: number, width: number, height: number, ratio: number }}
  */
-export function getSliderState() {
-    if (!compareControl) {
+export function getSliderState(mapId, instanceKey) {
+    const state = findState(mapId, instanceKey);
+    if (!state?.control) {
         return { position: 0, width: 0, height: 0, ratio: 0.5 };
     }
 
-    const width = compareControl._bounds?.width
-        || compareContainerElement?.clientWidth
-        || 0;
-    const height = compareControl._bounds?.height
-        || compareContainerElement?.clientHeight
-        || 0;
-    const position = compareControl.currentPosition ?? 0;
+    // Size comes from the container element, not from the control's private bounds field.
+    const rect = state.container?.getBoundingClientRect();
+    const width = rect?.width ?? 0;
+    const height = rect?.height ?? 0;
+    const position = state.control.currentPosition ?? 0;
+
     return {
         position,
         width,
@@ -314,29 +288,69 @@ export function getSliderState() {
     };
 }
 
-export function setSlider(position) {
-    compareControl?.setSlider(position);
+export function setSlider(mapId, instanceKey, position) {
+    findState(mapId, instanceKey)?.control?.setSlider(position);
 }
 
-export function onSlideEnd(dotnetReference) {
-    if (!compareControl) {
+/**
+ * Subscribes to slideend. The subscription is kept even when no control exists yet and is attached on create.
+ * @returns {string} Listener id used by off().
+ */
+export function onSlideEnd(mapId, instanceKey, dotnetReference) {
+    const map = requireMap(mapId);
+    const state = getMapState(map, stateKey(instanceKey), createState);
+    const listenerId = `${instanceKey}:${state.nextListenerId++}`;
+
+    const handler = async (event) => {
+        try {
+            await dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(event));
+        } catch (error) {
+            console.error('ComparePlugin slideend callback failed.', error);
+        }
+    };
+
+    state.listeners.set(listenerId, { handler });
+    state.control?.on('slideend', handler);
+    return listenerId;
+}
+
+/**
+ * Unsubscribes one slideend listener. Idempotent: an unknown or already removed id is ignored.
+ * The listener id has the form "<instanceKey>:<n>", which selects the per-instance state.
+ */
+export function off(mapId, listenerId) {
+    const map = getMap(mapId);
+    if (!map) {
         return;
     }
 
-    compareControl.on('slideend', (event) => {
-        dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(event));
-    });
-}
-
-export function remove() {
-    if (compareControl) {
-        clearHandleOptions(compareContainerElement);
-        compareControl.remove();
-        compareControl = null;
-        compareContainerElement = null;
+    const state = peekMapState(map, stateKey(listenerId.slice(0, listenerId.lastIndexOf(':'))));
+    const entry = state?.listeners.get(listenerId);
+    if (!entry) {
+        return;
     }
+
+    state.listeners.delete(listenerId);
+    state.control?.off('slideend', entry.handler);
 }
 
-export function dispose() {
-    remove();
+/** Removes the control and all slideend listeners of this instance. Idempotent. */
+export function remove(mapId, instanceKey) {
+    const state = findState(mapId, instanceKey);
+    if (!state) {
+        return;
+    }
+
+    detachControl(state);
+    state.listeners.clear();
+}
+
+/** Removes everything this instance created on the map and forgets its state. Idempotent. */
+export function dispose(mapId, instanceKey) {
+    remove(mapId, instanceKey);
+
+    const map = getMap(mapId);
+    if (map) {
+        deleteMapState(map, stateKey(instanceKey));
+    }
 }

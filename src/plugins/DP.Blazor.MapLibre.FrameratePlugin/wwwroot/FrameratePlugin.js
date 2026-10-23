@@ -1,77 +1,40 @@
-import { registerFramerateControl } from './maplibregl-framerate-control.js';
+import { getMapState, peekMapState, loadStylesheet } from '../DP.Blazor.MapLibre/PluginRuntime.js';
+import { FrameRateControl } from './maplibregl-framerate-control.js';
 
-const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+// Stable ids and URLs; the stylesheet is shared by all maps and deduplicated by loadStylesheet.
+const STYLESHEET_ID = 'framerate-plugin';
+const STYLESHEET_HREF = new URL('FrameratePlugin.css', import.meta.url).href;
 
-let mapObject = null;
-let framerateControl = null;
-let dependenciesLoaded = false;
+// Per-map state: several maps (and several plugin instances) must not share the control.
+const STATE_KEY = 'framerate-plugin';
 
-function contentUrl(relativePath) {
-    return new URL(relativePath, document.baseURI).href;
-}
-
-async function ensureMapLibreGlobal() {
-    if (globalThis.maplibregl?.Map) {
-        return;
-    }
-
-    const mapLibre = await import(contentUrl(mapLibreModulePath));
-    await mapLibre.prepareMapLibreGl();
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS failed to load');
-    }
-}
-
-function ensureStylesheet() {
-    const href = new URL('FrameratePlugin.css', import.meta.url).href;
-    if (document.querySelector(`link[href="${href}"]`)) {
-        return;
-    }
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    document.head.appendChild(link);
-}
-
-async function loadDependencies() {
-    if (dependenciesLoaded) {
-        return;
-    }
-
-    await ensureMapLibreGlobal();
-    ensureStylesheet();
-    registerFramerateControl(globalThis.maplibregl);
-    dependenciesLoaded = true;
+function stateFor(map) {
+    return getMapState(map, STATE_KEY, () => ({ control: null }));
 }
 
 export async function initialize(map) {
-    mapObject = map;
-    await loadDependencies();
+    await loadStylesheet(STYLESHEET_ID, STYLESHEET_HREF);
+    stateFor(map);
 }
 
-export async function addControl(options, position = 'top-right') {
-    await loadDependencies();
+export async function addControl(map, options, position = 'top-right') {
+    await loadStylesheet(STYLESHEET_ID, STYLESHEET_HREF);
 
-    if (!mapObject) {
-        throw new Error('Framerate plugin is not initialized.');
+    removeControl(map);
+
+    const state = stateFor(map);
+    const control = new FrameRateControl(options ?? {});
+    state.control = control;
+    map.addControl(control, position);
+}
+
+export function removeControl(map) {
+    const state = peekMapState(map, STATE_KEY);
+    const control = state?.control;
+    if (!control) {
+        return;
     }
 
-    removeControl();
-
-    const FrameRateControl = globalThis.maplibregl.FrameRateControl;
-    framerateControl = new FrameRateControl(options ?? {});
-    mapObject.addControl(framerateControl, position);
-}
-
-export function removeControl() {
-    if (mapObject && framerateControl) {
-        mapObject.removeControl(framerateControl);
-        framerateControl = null;
-    }
-}
-
-export function dispose() {
-    removeControl();
-    mapObject = null;
+    state.control = null;
+    map.removeControl(control);
 }

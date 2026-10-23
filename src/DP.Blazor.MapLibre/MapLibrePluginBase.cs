@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre;
@@ -10,10 +12,17 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
     #region Fields
 
     private MapLibrePluginLifecycleState _state = MapLibrePluginLifecycleState.Created;
+    private readonly SemaphoreSlim _initializeLock = new(1, 1);
 
     #endregion
 
     #region Properties
+
+    /// <summary>
+    /// Logger used for non-fatal plugin failures. The hosting <see cref="MapLibre"/> component assigns its logger
+    /// when the plugin is registered; it defaults to a no-op logger.
+    /// </summary>
+    public ILogger Logger { get; set; } = NullLogger.Instance;
 
     /// <inheritdoc />
     public MapLibrePluginLifecycleState State => _state;
@@ -48,9 +57,24 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
             return;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await OnInitializeAsync(map, runtime, cancellationToken).ConfigureAwait(false);
-        _state = MapLibrePluginLifecycleState.Initialized;
+        // Concurrent callers wait for the first initialization instead of running OnInitializeAsync twice.
+        await _initializeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            if (IsInitialized)
+            {
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await OnInitializeAsync(map, runtime, cancellationToken).ConfigureAwait(false);
+            _state = MapLibrePluginLifecycleState.Initialized;
+        }
+        finally
+        {
+            _initializeLock.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -74,7 +98,7 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
         }
         catch (JSException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MapLibre] Detach failed: {ex.Message}");
+            Logger.LogWarning(ex, "Detach failed.");
         }
         finally
         {
@@ -110,7 +134,7 @@ public abstract class MapLibrePluginBase : IMapLibrePluginLifecycle
         }
         catch (JSException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MapLibre] Dispose failed: {ex.Message}");
+            Logger.LogWarning(ex, "Dispose failed.");
         }
         finally
         {

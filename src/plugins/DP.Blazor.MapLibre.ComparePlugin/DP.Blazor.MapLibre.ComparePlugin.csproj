@@ -11,10 +11,7 @@
         <PackageTags>Blazor;MapLibre;Compare;Plugin</PackageTags>
     </PropertyGroup>
 
-    <ItemGroup>
-        <EmbeddedResource Include="wwwroot\**\*" />
-    </ItemGroup>
-
+    <!-- wwwroot is shipped as static web assets under StaticWebAssetBasePath (_content/MapComparePlugin). -->
     <ItemGroup>
         <ProjectReference Include="..\..\DP.Blazor.MapLibre\DP.Blazor.MapLibre.csproj" />
     </ItemGroup>

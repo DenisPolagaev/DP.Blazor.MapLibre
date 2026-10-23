@@ -1,20 +1,30 @@
-using DP.Blazor.MapLibre;
 using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre.StarfieldPlugin;
 
 /// <summary>
 /// MapLibre plugin that adds an SVG starfield and atmospheric glow behind a globe map
-/// (<see href="https://github.com/markmclaren/maplibre-gl-starfield">maplibre-gl-starfield</see>).
-/// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AttachAsync"/>
-/// after the map is ready (guard with <see cref="IsInitialized"/> if using <c>OnLoad</c> / <c>OnStyleLoad</c>).
+/// (<see href="https://github.com/markmclaren/maplibre-gl-starfield">maplibre-gl-starfield</see>, DP fork).
+/// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AttachAsync(StarfieldOptions?)"/>
+/// after the map is ready (guard with <see cref="MapLibrePluginBase.IsInitialized"/> if using <c>OnLoad</c> / <c>OnStyleLoad</c>).
+/// <see cref="DetachAsync()"/> and disposal remove the backdrop and restore the host and map styles that attach changed.
 /// </summary>
-public sealed class StarfieldPlugin : MapLibrePluginBase
+public sealed class StarfieldPlugin : MapLibreJsPlugin
 {
     #region Fields
 
-    private IJSObjectReference? _mapObject;
-    private IJSObjectReference? _pluginJsModule;
+    private IJSObjectReference? _mapReference;
+
+    #endregion
+
+    #region Properties
+
+    /// <inheritdoc />
+    protected override string ModulePath => "./_content/StarfieldPlugin/StarfieldPlugin.js";
+
+    /// <summary>JS handle of the map this plugin is bound to. Available after initialization.</summary>
+    private IJSObjectReference MapReference =>
+        _mapReference ?? throw new InvalidOperationException($"{nameof(StarfieldPlugin)} is not bound to a map.");
 
     #endregion
 
@@ -23,85 +33,56 @@ public sealed class StarfieldPlugin : MapLibrePluginBase
     /// <summary>
     /// Attaches the starfield and globe glow. Creates backdrop layers behind the map unless
     /// <see cref="StarfieldOptions.StarfieldContainerId"/> and <see cref="StarfieldOptions.GlowContainerId"/> are set.
+    /// Calling without <paramref name="options"/> uses the upstream defaults.
+    /// Attaching again replaces the current backdrop.
     /// </summary>
     public async ValueTask AttachAsync(StarfieldOptions? options = null)
     {
         EnsureInitialized();
-        await _pluginJsModule!.InvokeVoidAsync("attach", options);
+        await Module.InvokeVoidAsync("attach", MapReference, options ?? new StarfieldOptions());
         MarkAttached();
     }
 
     /// <summary>
-    /// Updates glow / star settings on an already attached backdrop.
+    /// Updates glow / star settings on an already attached backdrop. Does nothing when the plugin is not attached.
     /// </summary>
     public async ValueTask UpdateConfigAsync(StarfieldOptions options)
     {
         EnsureInitialized();
         ArgumentNullException.ThrowIfNull(options);
-        await _pluginJsModule!.InvokeVoidAsync("updateConfig", options);
+        await Module.InvokeVoidAsync("updateConfig", MapReference, options);
     }
 
     /// <summary>
-    /// Detaches listeners and removes plugin-owned backdrop DOM nodes.
+    /// Removes the backdrop and restores the host and map styles changed by <see cref="AttachAsync(StarfieldOptions?)"/>.
+    /// Same as <c>DetachAsync(CancellationToken.None)</c>.
     /// </summary>
-    public async ValueTask DetachAsync()
-    {
-        if (!IsInitialized || !IsAttached)
-        {
-            MarkDetached();
-            return;
-        }
-
-        await _pluginJsModule!.InvokeVoidAsync("detach");
-        MarkDetached();
-    }
+    public ValueTask DetachAsync() => DetachAsync(CancellationToken.None);
 
     #endregion
 
     #region Lifecycle Overrides
 
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
+    /// <inheritdoc />
+    protected override ValueTask OnModuleLoadedAsync(IJSObjectReference map, CancellationToken cancellationToken)
     {
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/StarfieldPlugin/StarfieldPlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
+        // The JS module keeps no map-level state of its own; every call receives the map handle.
+        _mapReference = map;
+        return base.OnModuleLoadedAsync(map, cancellationToken);
     }
 
-    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
+    /// <inheritdoc />
+    protected override ValueTask OnDetachModuleAsync(CancellationToken cancellationToken) =>
+        Module.InvokeVoidAsync("detach", cancellationToken, MapReference);
+
+    /// <inheritdoc />
+    protected override ValueTask OnModuleDisposingAsync()
     {
-        if (_pluginJsModule is null || !IsAttached)
-        {
-            return;
-        }
-
-        await _pluginJsModule.InvokeVoidAsync("detach", cancellationToken);
-    }
-
-    protected override async ValueTask OnDisposeAsync()
-    {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
-        {
-            _mapObject = null;
-            return;
-        }
-
-        try
-        {
-            await pluginModule.InvokeVoidAsync("dispose");
-            await pluginModule.DisposeAsync();
-        }
-        finally
-        {
-            _pluginJsModule = null;
-            _mapObject = null;
-        }
+        var map = _mapReference;
+        _mapReference = null;
+        return map is null
+            ? ValueTask.CompletedTask
+            : Module.InvokeVoidAsync("dispose", map);
     }
 
     #endregion

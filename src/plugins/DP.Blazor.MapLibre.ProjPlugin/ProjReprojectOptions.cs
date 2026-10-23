@@ -27,18 +27,40 @@ public sealed class ProjReprojectOptions
     public required string Crs { get; set; }
 
     /// <summary>
-    /// Optional transformer id returned by a previous reprojection ({crs} must match) to
-    /// skip rebuilding the projection scale factors.
+    /// Optional transformer id returned by a previous reprojection. Its CRS must equal <see cref="Crs"/>, otherwise
+    /// the call fails. When the id is known, its projection is reused and <see cref="AreaOfUse"/> is ignored.
     /// </summary>
     [JsonPropertyName("transformerId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TransformerId { get; set; }
 
     /// <summary>
-    /// When <c>true</c>, debug layers are added showing output/input tile borders and labels.
+    /// Reserved. Debug tile-border layers are not implemented yet; the value is sent to the pipeline and ignored.
     /// </summary>
     [JsonPropertyName("tileBoundaries")]
     public bool TileBoundaries { get; set; }
+
+    /// <summary>
+    /// Optional real-world area of use <c>[west, south, east, north]</c> degrees. Derives the fake-space scale for
+    /// regional and polar CRS, as in <see cref="ProjMapProjectionOptions.AreaOfUse"/>.
+    /// </summary>
+    [JsonPropertyName("areaOfUse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? AreaOfUse { get; set; }
+
+    /// <summary>
+    /// Hemisphere to frame when <see cref="AreaOfUse"/> is not set. <c>null</c> samples all latitudes.
+    /// </summary>
+    [JsonPropertyName("polarHemisphere")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ProjPolarHemisphere? PolarHemisphere { get; set; }
+
+    /// <summary>
+    /// Upper bound on the input tiles read for one output tile of a vector source. When a tile needs more, the output
+    /// tile is incomplete and a warning names the source. Must be at least 1. Default: 64.
+    /// </summary>
+    [JsonPropertyName("maxInputTiles")]
+    public int MaxInputTiles { get; set; } = 64;
 
     /// <summary>
     /// Options passed to <c>MapLibre.SetStyle</c> when applying via

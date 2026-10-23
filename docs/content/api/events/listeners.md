@@ -37,7 +37,7 @@ await listener.Remove(); // calls map.off() in JavaScript
 | `projectiontransition` | `MapProjectionEvent` | `OnProjectionTransition` | No |
 | `terrain` | `MapTerrainEvent` | `OnTerrain` | No |
 
-Aliases (MapLibre 6 naming): `MapSourceDataEvent` / `MapStyleDataEvent` (data events), `MapMovementEvent` (camera), `MapBoxZoomEvent` (boxzoom).
+Payload types: `MapDataEvent` (data and style-data events), `MapMoveEvent` (camera movement), `MapZoomEvent` (box zoom).
 
 Compact interop DTO includes `dataType`, `sourceId`, `sourceDataType`, `isSourceLoaded`, `tile`, `newProjection`, and missing-image `id` in addition to `type` / `point` / `lngLat` / `features`.
 
@@ -52,4 +52,3 @@ Compact interop DTO includes `dataType`, `sourceId`, `sourceDataType`, `isSource
 
 - `AddMarker` returns `MapMarker` — `SetLngLat`, `SetRotation`, `SetDraggable`, `SetPopup`, `TogglePopup`, `OnClick`, `OnDrag*`
 - `AddPopup` returns `MapPopup` — `SetHtml`, `SetText`, `TrackPointer`, `IsOpen`, `OnOpen`, `OnClose`
-- `CreatePopup` remains as a legacy wrapper around `AddPopup`

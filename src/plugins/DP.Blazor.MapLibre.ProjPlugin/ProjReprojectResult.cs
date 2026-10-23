@@ -23,8 +23,8 @@ public sealed class ProjReprojectResult
     public required LngLatBounds Bounds { get; set; }
 
     /// <summary>
-    /// Padded area-of-use for regional CRS, intended for <c>map.setMaxBounds</c>.
-    /// <c>null</c> for global projections.
+    /// Reserved for the area-of-use bounds intended for <c>map.setMaxBounds</c>. The current pipeline never populates
+    /// it, so it is always <c>null</c>.
     /// </summary>
     [JsonPropertyName("maxBounds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

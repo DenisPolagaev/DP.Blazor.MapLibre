@@ -8,19 +8,22 @@ namespace DP.Blazor.MapLibre.GeoGridPlugin;
 /// (<see href="https://github.com/falseinput/geogrid-maplibre-gl">geogrid-maplibre-gl</see>).
 /// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AddGeoGridAsync"/>
 /// from <c>OnLoad</c> or <c>OnStyleLoad</c> after the map is ready.
-/// Include <c>./_content/GeoGridPlugin/geogrid/geogrid.css</c> in your app for label positioning.
+/// The stylesheet that positions the edge labels is loaded by the plugin itself during initialization;
+/// no manual stylesheet link is required.
 /// </summary>
-public sealed class GeoGridPlugin : MapLibrePluginBase
+public sealed class GeoGridPlugin : MapLibreJsPlugin
 {
     #region Fields
 
-    private IJSObjectReference? _mapObject;
-    private IJSObjectReference? _pluginJsModule;
+    private IJSObjectReference? _map;
     private GeoGridOptions? _activeOptions;
 
     #endregion
 
     #region Properties
+
+    /// <summary>Static asset path of the plugin module.</summary>
+    protected override string ModulePath => "./_content/GeoGridPlugin/GeoGridPlugin.js";
 
     /// <summary>Whether the grid is currently attached to the map.</summary>
     public bool IsActive => IsAttached;
@@ -39,7 +42,7 @@ public sealed class GeoGridPlugin : MapLibrePluginBase
         EnsureInitialized();
 
         _activeOptions = options;
-        await _pluginJsModule!.InvokeVoidAsync("add", _mapObject, _activeOptions);
+        await Module.InvokeVoidAsync("add", RequireMap(), _activeOptions);
         MarkAttached();
     }
 
@@ -48,13 +51,12 @@ public sealed class GeoGridPlugin : MapLibrePluginBase
     /// </summary>
     public async ValueTask RemoveGeoGridAsync()
     {
-        if (!IsInitialized || !IsAttached)
+        if (!IsAttached)
         {
-            MarkDetached();
             return;
         }
 
-        await _pluginJsModule!.InvokeVoidAsync("remove", _mapObject);
+        await Module.InvokeVoidAsync("remove", RequireMap());
         MarkDetached();
     }
 
@@ -78,53 +80,43 @@ public sealed class GeoGridPlugin : MapLibrePluginBase
 
     #region Lifecycle Overrides
 
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Keeps the map reference that every grid call needs, then runs the default <c>initialize</c> call,
+    /// which loads <c>geogrid.css</c> from the plugin module.
+    /// </summary>
+    protected override ValueTask OnModuleLoadedAsync(IJSObjectReference map, CancellationToken cancellationToken)
     {
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/GeoGridPlugin/GeoGridPlugin.js");
+        _map = map;
+        return base.OnModuleLoadedAsync(map, cancellationToken);
     }
 
-    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
+    /// <inheritdoc />
+    protected override ValueTask OnDetachModuleAsync(CancellationToken cancellationToken) =>
+        Module.InvokeVoidAsync("remove", cancellationToken, RequireMap());
+
+    /// <inheritdoc />
+    protected override async ValueTask OnModuleDisposingAsync()
     {
-        if (_pluginJsModule is null || _mapObject is null || !IsAttached)
-        {
-            return;
-        }
-
-        await _pluginJsModule.InvokeVoidAsync("remove", cancellationToken, _mapObject);
-    }
-
-    protected override async ValueTask OnDisposeAsync()
-    {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
-        {
-            _mapObject = null;
-            return;
-        }
-
         try
         {
-            if (_mapObject is not null)
+            if (_map is not null)
             {
-                await pluginModule.InvokeVoidAsync("dispose", _mapObject);
+                await Module.InvokeVoidAsync("dispose", _map);
             }
-
-            await pluginModule.DisposeAsync();
         }
         finally
         {
-            _pluginJsModule = null;
-            _mapObject = null;
+            _map = null;
             _activeOptions = null;
         }
     }
+
+    #endregion
+
+    #region Private Helpers
+
+    private IJSObjectReference RequireMap() =>
+        _map ?? throw new InvalidOperationException("GeoGridPlugin has no map reference. Initialize the plugin first.");
 
     #endregion
 }

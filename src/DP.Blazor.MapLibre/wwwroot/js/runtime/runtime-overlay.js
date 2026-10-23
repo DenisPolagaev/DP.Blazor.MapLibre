@@ -28,12 +28,6 @@ export function recordSourceTiles(store, id, tiles) {
         spec.tiles = clone(tiles);
     }
 }
-export function recordSourceUrl(store, id, url) {
-    const spec = store.sources.get(id);
-    if (spec && typeof spec === 'object') {
-        spec.url = url;
-    }
-}
 export function forgetSource(store, id) {
     store.sources.delete(id);
     store.layers = store.layers.filter((layer) => layer.spec['source'] !== id);

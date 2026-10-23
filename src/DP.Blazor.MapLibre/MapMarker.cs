@@ -1,6 +1,7 @@
 using DP.Blazor.MapLibre.Models;
 using DP.Blazor.MapLibre.Models.Event;
 using DP.Blazor.MapLibre.Models.Marker;
+using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre;
 
@@ -84,6 +85,12 @@ public sealed class MapMarker
 
     public ValueTask<bool> ToggleClassNameAsync(string className) =>
         _map.InvokeMarkerAsync<bool>(Id, "toggleClassName", className);
+
+    /// <summary>
+    /// Returns the marker's DOM element. Use it with JavaScript interop to customize the element.
+    /// </summary>
+    public ValueTask<IJSObjectReference?> GetElementAsync() =>
+        _map.InvokeMarkerAsync<IJSObjectReference?>(Id, "getElement");
 
     public ValueTask AddToMapAsync() => _map.InvokeMarkerVoidAsync(Id, "addTo", _map.InteropContainerId);
 

@@ -1,100 +1,39 @@
-using DP.Blazor.MapLibre;
+using System.Text.Json;
 using DP.Blazor.MapLibre.Models.Control;
-using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre.FrameratePlugin;
 
 /// <summary>
-/// MapLibre plugin that adds a frame rate performance control
-/// (<see href="https://github.com/mapbox/mapbox-gl-framerate">mapbox-gl-framerate</see>).
+/// MapLibre plugin that adds a frame rate performance control. The control is adapted from
+/// <see href="https://github.com/mapbox/mapbox-gl-framerate">mapbox-gl-framerate</see> (ISC).
 /// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AddFramerateControlAsync"/>
-/// after the map is ready (guard with <see cref="IsInitialized"/> if using <c>OnLoad</c>).
+/// after the map is ready (guard with <see cref="MapLibrePluginBase.IsInitialized"/> if using <c>OnLoad</c>).
 /// </summary>
-public sealed class FrameratePlugin : MapLibrePluginBase
+public sealed class FrameratePlugin : MapLibreControlPlugin<FramerateControlOptions>
 {
-    #region Fields
-
-    private IJSObjectReference? _mapObject;
-    private IJSObjectReference? _pluginJsModule;
-
-    #endregion
-
-    #region Public API
+    /// <inheritdoc />
+    protected override string ModulePath => "./_content/FrameratePlugin/FrameratePlugin.js";
 
     /// <summary>
-    /// Adds the frame rate control to the map.
+    /// Adds the frame rate control to the map. Replaces a control added earlier by this plugin.
     /// </summary>
     public async ValueTask AddFramerateControlAsync(
         FramerateControlOptions? options = null,
         ControlPosition position = ControlPosition.TopRight)
     {
-        EnsureInitialized();
-        await _pluginJsModule!.InvokeVoidAsync("addControl", options, position);
-        MarkAttached();
+        await AddControlCoreAsync(options, ToPositionName(position));
     }
 
     /// <summary>
-    /// Removes the frame rate control from the map.
+    /// Removes the frame rate control from the map. Does nothing when no control was added.
     /// </summary>
     public async ValueTask RemoveFramerateControlAsync()
     {
-        if (!IsInitialized || !IsAttached)
-        {
-            MarkDetached();
-            return;
-        }
-
-        await _pluginJsModule!.InvokeVoidAsync("removeControl");
-        MarkDetached();
+        await RemoveControlCoreAsync();
     }
 
-    #endregion
-
-    #region Lifecycle Overrides
-
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
-    {
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/FrameratePlugin/FrameratePlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
-    }
-
-    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
-    {
-        if (_pluginJsModule is null || !IsAttached)
-        {
-            return;
-        }
-
-        await _pluginJsModule.InvokeVoidAsync("removeControl", cancellationToken);
-    }
-
-    protected override async ValueTask OnDisposeAsync()
-    {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
-        {
-            _mapObject = null;
-            return;
-        }
-
-        try
-        {
-            await pluginModule.InvokeVoidAsync("dispose");
-            await pluginModule.DisposeAsync();
-        }
-        finally
-        {
-            _pluginJsModule = null;
-            _mapObject = null;
-        }
-    }
-
-    #endregion
+    // The JS side expects the MapLibre position name ("top-right"); the enum already carries that name
+    // through its JSON converter, so the same serializer keeps both representations in sync.
+    private static string ToPositionName(ControlPosition position) =>
+        JsonSerializer.Serialize(position).Trim('"');
 }

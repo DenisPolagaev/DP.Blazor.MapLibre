@@ -6,7 +6,7 @@
 |--------|-------|--------|
 | Map instance / JS registries | `MapLibre` component | `remove()` calls `offAll`, clears markers/popups/options |
 | Listeners created via `AddListener` / `OnClick` | Map + `Listener` handle | Dispose map or call `Listener.DisposeAsync` |
-| Plugins via `RegisterPlugin` / `RegisterPluginAsync` | **Map** | App must not dispose them again after map teardown |
+| Plugins via `RegisterPlugin` | **Map** | App must not dispose them again after map teardown |
 | Compare plugin | Host (`GeoportalMapHost`) | Cross-map; host calls `RemoveAsync` + `DisposeAsync` |
 | GeoGrid / Measure / Wind pulse app handles | App services hold instances | On remount, drop handles and create fresh plugins; map already disposed registered ones |
 

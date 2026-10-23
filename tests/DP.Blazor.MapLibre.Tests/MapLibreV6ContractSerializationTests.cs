@@ -51,9 +51,7 @@ public class MapLibreV6ContractSerializationTests
             ValidateStyle = true,
         };
 
-#pragma warning disable CS0618
-        Assert.Equal(4, options.ExperimentalZoomLevelsToOverscale);
-#pragma warning restore CS0618
+        Assert.Equal(4, options.ZoomLevelsToOverscale);
 
         var root = SerializeToElement(options);
         Assert.Equal(4, root.GetProperty("zoomLevelsToOverscale").GetInt32());
@@ -62,7 +60,6 @@ public class MapLibreV6ContractSerializationTests
         Assert.Equal(20, root.GetProperty("anisotropicFilterPitch").GetDouble());
         Assert.Equal("auto", root.GetProperty("terrainSkirtLength").GetString());
         Assert.True(root.GetProperty("aroundCenter").GetBoolean());
-        Assert.False(root.TryGetProperty("experimentalZoomLevelsToOverscale", out _));
 
         var restored = JsonSerializer.Deserialize<MapOptions>(root.GetRawText(), MapLibreJsonSerializer.Options);
         Assert.NotNull(restored);
@@ -298,7 +295,7 @@ public class MapLibreV6ContractSerializationTests
             """;
 
         var asData = JsonSerializer.Deserialize<MapDataEvent>(json, MapLibreJsonSerializer.Options);
-        var asSource = JsonSerializer.Deserialize<MapSourceDataEvent>(json, MapLibreJsonSerializer.Options);
+        var asSource = JsonSerializer.Deserialize<MapDataEvent>(json, MapLibreJsonSerializer.Options);
 
         Assert.NotNull(asData);
         Assert.Equal(EventType.SourceData, asData!.Type);
@@ -313,7 +310,6 @@ public class MapLibreV6ContractSerializationTests
 
         Assert.NotNull(asSource);
         Assert.Equal("weather", asSource!.SourceId);
-        Assert.IsAssignableFrom<MapDataEvent>(asSource);
     }
 
     [Fact]
@@ -338,18 +334,16 @@ public class MapLibreV6ContractSerializationTests
     }
 
     [Fact]
-    public void EventAliases_DeserializeSamePayloads()
+    public void MoveAndBoxZoomEvents_DeserializeAsBaseTypes()
     {
         const string moveJson = """{ "type": "moveend" }""";
         Assert.NotNull(JsonSerializer.Deserialize<MapMoveEvent>(moveJson, MapLibreJsonSerializer.Options));
-        Assert.NotNull(JsonSerializer.Deserialize<MapMovementEvent>(moveJson, MapLibreJsonSerializer.Options));
 
         const string boxJson = """{ "type": "boxzoomstart" }""";
         Assert.NotNull(JsonSerializer.Deserialize<MapZoomEvent>(boxJson, MapLibreJsonSerializer.Options));
-        Assert.NotNull(JsonSerializer.Deserialize<MapBoxZoomEvent>(boxJson, MapLibreJsonSerializer.Options));
 
         const string styleJson = """{ "type": "styledata", "dataType": "style" }""";
-        Assert.NotNull(JsonSerializer.Deserialize<MapStyleDataEvent>(styleJson, MapLibreJsonSerializer.Options));
+        Assert.NotNull(JsonSerializer.Deserialize<MapDataEvent>(styleJson, MapLibreJsonSerializer.Options));
     }
 
     [Fact]

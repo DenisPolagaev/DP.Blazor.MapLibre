@@ -6,5 +6,5 @@ export { createGeoJsonSkipCache, disposeSkipCache, payloadKeyFromValue, skipCach
 export type { GeoJsonSkipCache } from './geojson-skip.js';
 export { coalesceTransactions } from './transaction-coalesce.js';
 export type { Transaction } from './transaction-coalesce.js';
-export { clearOverlay, disposeOverlay, forgetImage, forgetLayer, forgetSource, overlayFor, recordImage, recordLayer, recordSource, recordSourceData, recordSourceTiles, recordSourceUrl, replayOverlay, snapshotOverlay, } from './runtime-overlay.js';
+export { clearOverlay, disposeOverlay, forgetImage, forgetLayer, forgetSource, overlayFor, recordImage, recordLayer, recordSource, recordSourceData, recordSourceTiles, replayOverlay, snapshotOverlay, } from './runtime-overlay.js';
 //# sourceMappingURL=index.d.ts.map

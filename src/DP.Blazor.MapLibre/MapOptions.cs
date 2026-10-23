@@ -419,7 +419,7 @@ public class MapOptions
     /// </summary>
     [JsonPropertyName("style")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public object? Style { get; set; } = MapStyles.OpenStreetMap;
+    public object? Style { get; set; } = MapStyle.OpenStreetMap.Standard.ToStylePayload();
 
     /// <summary>
     /// When true (default), sources, layers, and images added at runtime are replayed
@@ -494,17 +494,6 @@ public class MapOptions
     [JsonPropertyName("zoomLevelsToOverscale")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ZoomLevelsToOverscale { get; set; }
-
-    /// <summary>
-    /// Obsolete name from MapLibre 5.x experimental API. Prefer <see cref="ZoomLevelsToOverscale"/>.
-    /// </summary>
-    [Obsolete("Use ZoomLevelsToOverscale (JSON: zoomLevelsToOverscale).")]
-    [JsonIgnore]
-    public int? ExperimentalZoomLevelsToOverscale
-    {
-        get => ZoomLevelsToOverscale;
-        set => ZoomLevelsToOverscale = value;
-    }
 
     /// <summary>
     /// Degrees of bearing change per pixel dragged while rotating.

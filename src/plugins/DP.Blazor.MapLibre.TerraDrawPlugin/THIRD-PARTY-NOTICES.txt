@@ -1,0 +1,16 @@
+THIRD-PARTY NOTICES
+===================
+
+This package vendors JavaScript and CSS from:
+
+  @watergis/maplibre-gl-terradraw
+  https://github.com/watergis/maplibre-gl-terradraw
+  Version:   1.13.2 (recorded in wwwroot/maplibre-gl-terradraw/VERSION)
+  Files:     wwwroot/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.umd.js
+             wwwroot/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css
+  Copyright: not verified in repository
+  License:   license not verified in repository
+
+The vendored bundle is loaded at runtime by TerraDrawPlugin.js. It depends on
+maplibre-gl, which is provided by the DP.Blazor.MapLibre core package and is not
+vendored by this package.

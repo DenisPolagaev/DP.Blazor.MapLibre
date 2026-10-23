@@ -30,10 +30,20 @@ public sealed class ProjSourceReprojectOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? AreaOfUse { get; set; }
 
-    /// <summary>Optional transformer id from a previous reprojection of the same CRS.</summary>
+    /// <summary>
+    /// Optional transformer id from a previous reprojection. Its CRS must equal <see cref="Crs"/>, otherwise the call
+    /// fails.
+    /// </summary>
     [JsonPropertyName("transformerId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TransformerId { get; set; }
+
+    /// <summary>
+    /// Upper bound on the input tiles read for one output tile. When a tile needs more, the output tile is incomplete
+    /// and a warning names the source. Must be at least 1. Default: 64.
+    /// </summary>
+    [JsonPropertyName("maxInputTiles")]
+    public int MaxInputTiles { get; set; } = 64;
 }
 
 /// <summary>Result of <see cref="ProjPlugin.ReprojectSourceAsync"/>.</summary>

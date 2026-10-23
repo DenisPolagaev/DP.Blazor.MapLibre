@@ -12,11 +12,7 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 
 ## Quick start
 
-Edge labels need the bundled stylesheet. Add it to your host page or layout:
-
-```html
-<link rel="stylesheet" href="_content/GeoGridPlugin/geogrid/geogrid.css" />
-```
+No manual stylesheet link is needed: the plugin loads its `geogrid.css` (used for edge label positioning) itself when it is registered.
 
 Register the plugin, then add the grid once the map is ready (`OnLoad`, or `OnStyleLoad` with the pending guard):
 
@@ -40,6 +36,15 @@ Register the plugin, then add the grid once the map is ready (`OnLoad`, or `OnSt
 }
 ```
 
+### Grid density
+
+Use one of the two forms (when both are set, `GridDensityDegrees` wins):
+
+- `GridDensityDegrees`: fixed spacing in degrees at every zoom level.
+- `GridDensityByZoom`: a list of `GeoGridDensityStep { Zoom, DensityDegrees }`. The step with the greatest `Zoom` that is less than or equal to the current zoom is used; zoom levels below the first step use the first step's density.
+
+Unset optional properties are omitted from the options sent to JavaScript.
+
 ## Documentation
 
 - [Geo grid plugin guide](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/docs/content/plugins/geogrid-plugin.md)
@@ -47,4 +52,6 @@ Register the plugin, then add the grid once the map is ready (`OnLoad`, or `OnSt
 
 ## License
 
-Targets .NET 8, 9, 10 and 11. Released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+Targets .NET 8, 9, 10 and 11. The plugin code is released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+
+The vendored file `wwwroot/geogrid/index.js` is third-party code from geogrid-maplibre-gl. Its version and license are **not recorded in this repository**; verify them against the upstream project before redistribution. The file header states this as well.

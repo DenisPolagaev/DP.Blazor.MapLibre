@@ -29,5 +29,10 @@ own LICENSE file; the license terms of those projects apply to the vendored file
       https://github.com/mapbox/point-geometry
   pbf                        4.0.1          BSD-3-Clause
       https://github.com/mapbox/pbf
+  pmtiles                    not recorded   BSD-3-Clause
+      https://github.com/protomaps/PMTiles
+      Copyright (c) 2021 Brandon Liu / Protomaps LLC
+      (wwwroot/vendor/pmtiles/pmtiles.mjs is byte-identical to the copy in
+      DP.Blazor.MapLibre.PmtilesPlugin; the file has no license header of its own)
 
 Regenerate the vendored tree with: node scripts/vendor-proj.mjs

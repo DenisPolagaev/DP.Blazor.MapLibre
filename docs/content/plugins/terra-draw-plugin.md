@@ -123,8 +123,6 @@ Valhalla-specific modes are on `TerradrawValhallaModes`.
 | `FinishGeometryAsync()` | Finish the current geometry (simulates Enter). |
 | `DisableMapZoomGesturesAsync()` / `EnableMapZoomGesturesAsync()` | Toggle conflicting map zoom gestures. |
 
-Legacy helpers `AddTerraDrawToolAsync`, `SetTerraDrawModeAsync`, `StopTerraDrawAsync`, and `GetTerraDrawGeometriesAsync` remain available (marked `[Obsolete]`) and delegate to the control API.
-
 ## Measure control runtime properties
 
 Available when the target control is a `MaplibreMeasureControl`:

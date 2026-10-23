@@ -3,8 +3,9 @@ using Microsoft.JSInterop;
 namespace DP.Blazor.MapLibre;
 
 /// <summary>
-/// Optional lifecycle surface for plugins that support attach/detach and idempotent teardown.
-/// Existing <see cref="IMapLibrePlugin.Initialize"/> remains the compatibility entry point.
+/// Lifecycle surface for plugins that support attach/detach and idempotent teardown.
+/// <see cref="IMapLibrePlugin.Initialize"/> is the single entry point the map calls; plugins normally derive
+/// from <see cref="MapLibrePluginBase"/> or <see cref="MapLibreJsPlugin"/> instead of implementing this directly.
 /// </summary>
 public interface IMapLibrePluginLifecycle : IMapLibrePlugin
 {

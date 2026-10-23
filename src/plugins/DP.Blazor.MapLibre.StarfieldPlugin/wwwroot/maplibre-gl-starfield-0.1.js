@@ -1,12 +1,59 @@
 /**
- * MapLibreStarryBackground — starfield + atmospheric glow for MapLibre Globe.
+ * MapLibreStarryBackground: starfield + atmospheric glow for MapLibre Globe.
  *
- * Upstream idea: https://github.com/markmclaren/maplibre-gl-starfield (MIT)
- * DP fork: Canvas stars, attribute-only glow, rAF coalescing, auto-pause when
- * the globe disk covers the viewport (typical mid/high zoom).
+ * DP fork (version 0.1) of the maplibre-gl-starfield idea.
+ * Upstream reference: https://github.com/markmclaren/maplibre-gl-starfield
+ * (no upstream version or commit is pinned; see THIRD-PARTY-NOTICES.txt).
+ *
+ * Canvas stars, attribute-only glow, rAF coalescing, auto-pause when the globe
+ * disk covers the viewport (typical mid/high zoom).
+ *
+ * All state lives on the instance: several instances can drive several maps.
  */
 
-class MapLibreStarryBackground {
+/**
+ * Remembers the original inline style values of elements before the backdrop
+ * changes them, so detach can put them back exactly as they were.
+ */
+export class StyleSnapshot {
+  constructor() {
+    /** @type {Map<HTMLElement, Record<string, string>>} */
+    this._entries = new Map();
+  }
+
+  /**
+   * Sets inline style properties (camelCase, as on element.style). The original
+   * value of each property is remembered the first time it is changed.
+   * @param {HTMLElement} element
+   * @param {Record<string, string>} styles
+   */
+  set(element, styles) {
+    let saved = this._entries.get(element);
+    if (!saved) {
+      saved = {};
+      this._entries.set(element, saved);
+    }
+
+    for (const [prop, value] of Object.entries(styles)) {
+      if (!(prop in saved)) {
+        saved[prop] = element.style[prop];
+      }
+      element.style[prop] = value;
+    }
+  }
+
+  /** Restores every remembered value and forgets them. */
+  restore() {
+    for (const [element, saved] of this._entries) {
+      for (const [prop, value] of Object.entries(saved)) {
+        element.style[prop] = value;
+      }
+    }
+    this._entries.clear();
+  }
+}
+
+export class MapLibreStarryBackground {
   constructor(options = {}) {
     this.config = {
       starCount: options.starCount || 1500,
@@ -76,6 +123,14 @@ class MapLibreStarryBackground {
     this._globeCenterY = 0;
     this._handlers = null;
     this._attached = false;
+    /** Identity of the current attach; deferred callbacks compare against it. */
+    this._session = null;
+    /** @type {Set<number>} Pending setTimeout ids, cleared on detach. */
+    this._timers = new Set();
+    /** Pending rAF id of the sizing loop, cancelled on detach. */
+    this._sizeRaf = 0;
+    /** Original styles of the containers, canvas and canvas container. */
+    this._styles = new StyleSnapshot();
   }
 
   /**
@@ -93,6 +148,8 @@ class MapLibreStarryBackground {
   }
 
   /**
+   * Resolves both layer containers and styles them. Throws when either container
+   * is missing, so the caller never reports a backdrop that was not created.
    * @param {string|HTMLElement} starfieldContainer
    * @param {string|HTMLElement} glowContainer
    */
@@ -100,25 +157,29 @@ class MapLibreStarryBackground {
     this.containers.starfield = this.resolveContainer(starfieldContainer);
     this.containers.glow = this.resolveContainer(glowContainer);
 
-    if (!this.containers.starfield || !this.containers.glow) {
-      console.error("Starfield or glow container not found");
-      return false;
+    if (!this.containers.starfield) {
+      throw new Error(
+        `Starfield container "${String(starfieldContainer)}" was not found in the DOM.`
+      );
+    }
+    if (!this.containers.glow) {
+      throw new Error(
+        `Glow container "${String(glowContainer)}" was not found in the DOM.`
+      );
     }
 
-    for (const el of [this.containers.starfield, this.containers.glow]) {
-      el.style.position = "absolute";
-      el.style.top = "0";
-      el.style.left = "0";
-      el.style.width = "100%";
-      el.style.height = "100%";
-      el.style.pointerEvents = "none";
-      el.style.overflow = "hidden";
-      el.style.contain = "strict";
-    }
-
-    this.containers.starfield.style.zIndex = "1";
-    this.containers.glow.style.zIndex = "2";
-    return true;
+    const layout = {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      pointerEvents: "none",
+      overflow: "hidden",
+      contain: "strict",
+    };
+    this._styles.set(this.containers.starfield, { ...layout, zIndex: "1" });
+    this._styles.set(this.containers.glow, { ...layout, zIndex: "2" });
   }
 
   /**
@@ -139,7 +200,8 @@ class MapLibreStarryBackground {
       return;
     }
 
-    this.containers.starfield.innerHTML = "";
+    // Remove only the node this class created; the container may be host-owned.
+    this.elements.starCanvas?.remove();
     this.elements.starCanvas = null;
     this.elements.starCtx = null;
     this._sx = this._sy = this._sz = this._sr = this._sa = null;
@@ -271,7 +333,8 @@ class MapLibreStarryBackground {
       return;
     }
 
-    this.containers.glow.innerHTML = "";
+    // Remove only the nodes this class created; the container may be host-owned.
+    this.elements.glowSvg?.remove();
     this.elements.glowSvg = null;
     this.elements.glowCircle = null;
     this.elements.coronaCircle = null;
@@ -670,10 +733,10 @@ class MapLibreStarryBackground {
 
     const visibility = active ? "visible" : "hidden";
     if (this.containers.starfield) {
-      this.containers.starfield.style.visibility = visibility;
+      this._styles.set(this.containers.starfield, { visibility });
     }
     if (this.containers.glow) {
-      this.containers.glow.style.visibility = visibility;
+      this._styles.set(this.containers.glow, { visibility });
     }
 
     // Drop expensive SVG filters while paused (huge blur radii were the jank).
@@ -818,24 +881,23 @@ class MapLibreStarryBackground {
    */
   attachToMap(map, starfieldContainer, glowContainer) {
     if (!map) {
-      console.error("MapLibre map instance is required");
-      return;
+      throw new Error("MapLibreStarryBackground.attachToMap: a MapLibre map instance is required.");
     }
 
     this.detach();
-    this.mapInstance = map;
 
-    if (!this.setupContainers(starfieldContainer, glowContainer)) {
-      return;
-    }
+    // Resolve and style the containers first: a missing container throws before
+    // anything else is changed, so the map is left untouched.
+    this.setupContainers(starfieldContainer, glowContainer);
+    this.mapInstance = map;
 
     const canvas = map.getCanvas();
     if (canvas) {
-      canvas.style.background = "transparent";
+      this._styles.set(canvas, { background: "transparent" });
     }
     const canvasContainer = map.getCanvasContainer?.();
     if (canvasContainer) {
-      canvasContainer.style.background = "transparent";
+      this._styles.set(canvasContainer, { background: "transparent" });
     }
 
     this.createStarfield();
@@ -879,9 +941,14 @@ class MapLibreStarryBackground {
       this.scheduleFrame();
     };
 
+    // Every deferred callback checks `session`, so a callback that fires after
+    // detach (or after a re-attach) does nothing.
+    const session = {};
+    this._session = session;
+
     const onResize = () => this.handleResize(map);
     const onStyleLoad = () => {
-      setTimeout(() => this.handleResize(map), 100);
+      this._later(session, 100, () => this.handleResize(map));
     };
 
     map.on("move", onMove);
@@ -894,7 +961,8 @@ class MapLibreStarryBackground {
     this._attached = true;
 
     const ensureSized = () => {
-      if (!this._attached) {
+      this._sizeRaf = 0;
+      if (this._session !== session) {
         return;
       }
       const w = this.containers.starfield?.clientWidth || 0;
@@ -911,21 +979,48 @@ class MapLibreStarryBackground {
         }
         return;
       }
-      requestAnimationFrame(ensureSized);
+      this._sizeRaf = requestAnimationFrame(ensureSized);
     };
-    requestAnimationFrame(ensureSized);
-    setTimeout(() => {
-      if (this._attached) {
-        this.handleResize(map);
-      }
-    }, 200);
+    this._sizeRaf = requestAnimationFrame(ensureSized);
+    this._later(session, 200, () => this.handleResize(map));
   }
 
+  /**
+   * Runs fn after ms, unless the attach identified by session has ended first.
+   * The timer id is tracked and cleared by detach().
+   * @param {object} session Token returned for the current attach.
+   * @param {number} ms
+   * @param {() => void} fn
+   */
+  _later(session, ms, fn) {
+    const id = setTimeout(() => {
+      this._timers.delete(id);
+      if (this._session === session) {
+        fn();
+      }
+    }, ms);
+    this._timers.add(id);
+  }
+
+  /**
+   * Stops all listeners, timers and frames, removes the canvas and SVG nodes this
+   * class created, and restores every style it changed. Safe to call repeatedly.
+   */
   detach() {
+    this._session = null;
+
     if (this._raf) {
       cancelAnimationFrame(this._raf);
       this._raf = 0;
     }
+    if (this._sizeRaf) {
+      cancelAnimationFrame(this._sizeRaf);
+      this._sizeRaf = 0;
+    }
+    for (const id of this._timers) {
+      clearTimeout(id);
+    }
+    this._timers.clear();
 
     if (this.mapInstance && this._handlers) {
       const map = this.mapInstance;
@@ -942,6 +1037,9 @@ class MapLibreStarryBackground {
     this.mapInstance = null;
     this._sx = this._sy = this._sz = this._sr = this._sa = null;
     this._sc = null;
+
+    this.elements.starCanvas?.remove();
+    this.elements.glowSvg?.remove();
     this.elements = {
       starCanvas: null,
       starCtx: null,
@@ -954,14 +1052,7 @@ class MapLibreStarryBackground {
     this._globeCenterX = 0;
     this._globeCenterY = 0;
 
-    if (this.containers.starfield) {
-      this.containers.starfield.style.visibility = "";
-      this.containers.starfield.innerHTML = "";
-    }
-    if (this.containers.glow) {
-      this.containers.glow.style.visibility = "";
-      this.containers.glow.innerHTML = "";
-    }
+    this._styles.restore();
   }
 
   /** @param {object} options */
@@ -1025,5 +1116,3 @@ class MapLibreStarryBackground {
     }
   }
 }
-
-export { MapLibreStarryBackground };

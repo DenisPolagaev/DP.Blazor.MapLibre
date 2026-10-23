@@ -66,14 +66,14 @@ The `MapLibre` component wraps MapLibre GL JS 6.11.2. Key methods:
 
 ## Default style
 
-`MapOptions.Style` defaults to `MapStyles.OpenStreetMap`.
+`MapOptions.Style` defaults to `MapStyle.OpenStreetMap.Standard.ToStylePayload()`.
 
 ## Events
 
 - `AddListener<T>`, `AddOnceListener<T>` — generic subscriptions; optional `throttleMs` for high-frequency events; returns `Listener` with working `Remove()`.
 - `RemoveAllListeners(eventName?)` — detach all listeners on this map.
 - Convenience: `OnClick`, `OnContextMenu`, `OnDblClick`, `OnMouseDown`/`OnMouseUp`/`OnMouseEnter`/`OnMouseLeave`, `OnMoveStart`/`OnMove`/`OnMoveEnd`, camera `OnRotate*`/`OnPitch*`/`OnRoll*`, `OnBoxZoom*`, `OnWebGlContext*`, `OnWheel`, `OnRender`, …
-- Aliases: `MapSourceDataEvent`, `MapStyleDataEvent`, `MapMovementEvent`, `MapBoxZoomEvent`
+- Event payloads use the base types `MapDataEvent`, `MapMoveEvent`, and `MapZoomEvent`.
 - `MapEvent.GetOriginalDomEvent()` for typed DOM fields from `originalEvent`
 - Use `MapEventNames` for event name constants.
 

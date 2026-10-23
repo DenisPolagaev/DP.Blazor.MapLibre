@@ -2,18 +2,6 @@
   "generated": "2026-09-28T07:38:12.954Z",
   "packages": [
     {
-      "name": "maplibre-proj",
-      "version": "0.0.5",
-      "dir": "maplibre-proj",
-      "files": 5
-    },
-    {
-      "name": "backproj",
-      "version": "0.0.5",
-      "dir": "backproj",
-      "files": 5
-    },
-    {
       "name": "proj-wasm",
       "version": "0.1.0-alpha9",
       "dir": "proj-wasm",
@@ -78,6 +66,12 @@
       "version": "4.0.1",
       "dir": "pbf",
       "files": 7
+    },
+    {
+      "name": "pmtiles",
+      "version": "unknown",
+      "dir": "pmtiles",
+      "files": 1
     }
   ]
 }

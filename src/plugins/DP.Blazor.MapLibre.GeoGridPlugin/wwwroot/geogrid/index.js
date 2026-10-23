@@ -1,3 +1,7 @@
+/*
+ * Upstream: geogrid-maplibre-gl (https://github.com/falseinput/geogrid-maplibre-gl).
+ * Vendored third-party code. Version and license not recorded in this repository: verify before redistribution.
+ */
 const MIN_LATTITUDE = -90;
 const MAX_LATTITUDE = 90;
 const MAX_LONGITUDE = 180;

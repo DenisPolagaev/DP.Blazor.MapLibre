@@ -18,22 +18,27 @@ public sealed class ProjMapProjectionOptions
     [JsonPropertyName("crs")]
     public required string Crs { get; set; }
 
-    /// <summary>Optional transformer id from a previous reprojection of the same CRS.</summary>
+    /// <summary>
+    /// Optional transformer id returned by an earlier reprojection. Its CRS must equal <see cref="Crs"/>, otherwise the
+    /// call fails. When the id is known, its projection is reused and <see cref="AreaOfUse"/> is ignored.
+    /// </summary>
     [JsonPropertyName("transformerId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TransformerId { get; set; }
 
-    /// <summary>When <c>true</c>, adds debug tile-border layers.</summary>
+    /// <summary>
+    /// Reserved. Debug tile-border layers are not implemented yet; the value is sent to the pipeline and ignored.
+    /// </summary>
     [JsonPropertyName("tileBoundaries")]
     public bool TileBoundaries { get; set; }
 
     /// <summary>
-    /// For polar CRS, <c>north</c> or <c>south</c>. The plugin frames the map by sampling that
-    /// hemisphere because maplibre-proj returns degenerate world bounds for polar projections.
+    /// Hemisphere to frame when <see cref="AreaOfUse"/> is not set. Polar CRS are sampled only in that hemisphere, so
+    /// that the scale is derived from the pole the map shows. <c>null</c> samples all latitudes.
     /// </summary>
     [JsonPropertyName("polarHemisphere")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? PolarHemisphere { get; set; }
+    public ProjPolarHemisphere? PolarHemisphere { get; set; }
 
     /// <summary>
     /// Optional real-world area of use <c>[west, south, east, north]</c> degrees. Used to derive
@@ -56,4 +61,11 @@ public sealed class ProjMapProjectionOptions
     [JsonPropertyName("fitBoundsOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FitBoundOptions? FitBoundsOptions { get; set; }
+
+    /// <summary>
+    /// Upper bound on the input tiles read for one output tile. When a tile needs more, the output tile is incomplete
+    /// and a warning names the source. Must be at least 1. Default: 64.
+    /// </summary>
+    [JsonPropertyName("maxInputTiles")]
+    public int MaxInputTiles { get; set; } = 64;
 }

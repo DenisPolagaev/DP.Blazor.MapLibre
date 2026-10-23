@@ -68,7 +68,7 @@ With options and a load callback:
 @code {
     private readonly MapOptions _mapOptions = new()
     {
-        // Default style is MapStyles.OpenStreetMap (OSM raster).
+        // Default style is MapStyle.OpenStreetMap.Standard (OSM raster).
         // Center = new LngLat(37.618423, 55.751244),
         // Zoom = 10,
     };
@@ -81,7 +81,7 @@ With options and a load callback:
 }
 ```
 
-`MapOptions.Style` defaults to `MapStyles.OpenStreetMap`. Override it for vector basemaps or your own style URL/JSON.
+`MapOptions.Style` defaults to `MapStyle.OpenStreetMap.Standard.ToStylePayload()`. Override it for vector basemaps or your own style URL/JSON.
 
 ## What you can build
 

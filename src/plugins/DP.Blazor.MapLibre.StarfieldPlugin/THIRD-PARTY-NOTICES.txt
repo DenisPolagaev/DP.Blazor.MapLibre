@@ -1,11 +1,22 @@
 THIRD-PARTY NOTICES
 ===================
 
-This package vendors and adapts JavaScript from:
+This package contains JavaScript under wwwroot/. The files are:
 
-  maplibre-gl-starfield
+  wwwroot/maplibre-gl-starfield-0.1.js
+  wwwroot/StarfieldPlugin.js (plugin glue for DP.Blazor.MapLibre)
+
+maplibre-gl-starfield-0.1.js is a DP fork (version 0.1) of the idea behind
+maplibre-gl-starfield:
+
   https://github.com/markmclaren/maplibre-gl-starfield
-  Copyright (c) 2025 Mark McLaren
-  License: MIT
 
-The MIT License text from that project applies to the vendored sources under wwwroot/.
+Notes on provenance:
+
+- Version 0.1 is not tied to an upstream release, tag or commit. No upstream
+  version is pinned, and the file does not carry an upstream copyright header.
+- The upstream project is published under the MIT License. Its copyright notice
+  and license text are in the LICENSE file of the upstream repository.
+- If any code is copied verbatim from upstream, the MIT License terms apply to
+  that code, including the requirement to keep the upstream copyright notice and
+  permission notice. Verify this against the upstream source before redistributing.

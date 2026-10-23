@@ -2,6 +2,9 @@ using DP.Blazor.MapLibre.Models.Control;
 
 namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 
+/// <summary>
+/// The single place that maps C# enum members to the wire strings used by maplibre-gl-terradraw.
+/// </summary>
 internal static class TerraDrawInteropExtensions
 {
     public static string ToControlName(this TerraDrawControlType controlType) =>
@@ -31,6 +34,31 @@ internal static class TerraDrawInteropExtensions
             TerraDrawInstanceEventType.Select => "select",
             TerraDrawInstanceEventType.Deselect => "deselect",
             _ => throw new ArgumentOutOfRangeException(nameof(eventType), eventType, null),
+        };
+
+    public static string ToWireName(this TerraDrawMeasureUnit unit) =>
+        unit switch
+        {
+            TerraDrawMeasureUnit.Metric => "metric",
+            TerraDrawMeasureUnit.Imperial => "imperial",
+            _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, null),
+        };
+
+    public static string ToWireName(this TerraDrawCostingModel model) =>
+        model switch
+        {
+            TerraDrawCostingModel.Pedestrian => "pedestrian",
+            TerraDrawCostingModel.Bicycle => "bicycle",
+            TerraDrawCostingModel.Auto => "auto",
+            _ => throw new ArgumentOutOfRangeException(nameof(model), model, null),
+        };
+
+    public static string ToWireName(this TerraDrawRoutingDistanceUnit unit) =>
+        unit switch
+        {
+            TerraDrawRoutingDistanceUnit.Kilometers => "kilometers",
+            TerraDrawRoutingDistanceUnit.Miles => "miles",
+            _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, null),
         };
 
     public static string ToControlPosition(ControlPosition position) =>

@@ -1,6 +1,8 @@
 # DP.Blazor.MapLibre.FrameratePlugin
 
-Live **frame rate** overlay plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre), wrapping [mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate).
+Live **frame rate** overlay plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre).
+The FPS control is adapted from [mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate) (ISC) for MapLibre GL JS;
+see [THIRD-PARTY-NOTICES.txt](./THIRD-PARTY-NOTICES.txt).
 
 Shows live and average FPS while the map is moving.
 
@@ -18,7 +20,7 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 @using DP.Blazor.MapLibre.FrameratePlugin
 @using DP.Blazor.MapLibre.Models.Control
 
-<MapLibre @ref="_map" Options="_options" OnLoad="OnMapLoad" />
+<MapLibre @ref="_map" OnLoad="OnMapLoad" />
 
 @code {
     private MapLibre _map = new();
@@ -37,6 +39,15 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 }
 ```
 
+## API
+
+| Method | Description |
+| --- | --- |
+| `AddFramerateControlAsync(options?, position?)` | Adds the control. Replaces a control this plugin added earlier. |
+| `RemoveFramerateControlAsync()` | Removes the control. Does nothing when no control was added. |
+
+`FramerateControlOptions` properties that are left unset keep the upstream defaults.
+
 ## Documentation
 
 - [Frame rate plugin guide](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/docs/content/plugins/framerate-plugin.md)
@@ -44,4 +55,7 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 
 ## License
 
-Targets .NET 8, 9, 10 and 11. Released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+Plugin code is released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+The adapted mapbox-gl-framerate code is licensed under ISC; its notice is in [THIRD-PARTY-NOTICES.txt](./THIRD-PARTY-NOTICES.txt).
+
+Targets .NET 8, 9, 10 and 11.

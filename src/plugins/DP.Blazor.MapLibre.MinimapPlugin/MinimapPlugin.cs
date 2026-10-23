@@ -1,100 +1,39 @@
-using DP.Blazor.MapLibre;
+using System.Text.Json;
 using DP.Blazor.MapLibre.Models.Control;
-using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre.MinimapPlugin;
 
 /// <summary>
-/// MapLibre plugin that adds a minimap overview control
-/// (<see href="https://github.com/aesqe/mapboxgl-minimap">mapboxgl-minimap</see>).
+/// MapLibre plugin that adds a minimap overview control. The control is adapted from
+/// <see href="https://github.com/aesqe/mapboxgl-minimap">mapboxgl-minimap</see> (MIT).
 /// Register with the map in <c>OnAfterRenderAsync</c>, then call <see cref="AddMinimapControlAsync"/>
-/// after the map is ready (guard with <see cref="IsInitialized"/> if using <c>OnLoad</c>).
+/// after the map is ready (guard with <see cref="MapLibrePluginBase.IsInitialized"/> if using <c>OnLoad</c>).
 /// </summary>
-public sealed class MinimapPlugin : MapLibrePluginBase
+public sealed class MinimapPlugin : MapLibreControlPlugin<MinimapControlOptions>
 {
-    #region Fields
-
-    private IJSObjectReference? _mapObject;
-    private IJSObjectReference? _pluginJsModule;
-
-    #endregion
-
-    #region Public API
+    /// <inheritdoc />
+    protected override string ModulePath => "./_content/MinimapPlugin/MinimapPlugin.js";
 
     /// <summary>
-    /// Adds the minimap control to the map.
+    /// Adds the minimap control to the map. Replaces a control added earlier by this plugin.
     /// </summary>
     public async ValueTask AddMinimapControlAsync(
         MinimapControlOptions? options = null,
         ControlPosition position = ControlPosition.BottomLeft)
     {
-        EnsureInitialized();
-        await _pluginJsModule!.InvokeVoidAsync("addControl", options, position);
-        MarkAttached();
+        await AddControlCoreAsync(options, ToPositionName(position));
     }
 
     /// <summary>
-    /// Removes the minimap control from the map.
+    /// Removes the minimap control from the map. Does nothing when no control was added.
     /// </summary>
     public async ValueTask RemoveMinimapControlAsync()
     {
-        if (!IsInitialized || !IsAttached)
-        {
-            MarkDetached();
-            return;
-        }
-
-        await _pluginJsModule!.InvokeVoidAsync("removeControl");
-        MarkDetached();
+        await RemoveControlCoreAsync();
     }
 
-    #endregion
-
-    #region Lifecycle Overrides
-
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
-    {
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/MinimapPlugin/MinimapPlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
-    }
-
-    protected override async ValueTask OnDetachAsync(CancellationToken cancellationToken)
-    {
-        if (_pluginJsModule is null || !IsAttached)
-        {
-            return;
-        }
-
-        await _pluginJsModule.InvokeVoidAsync("removeControl", cancellationToken);
-    }
-
-    protected override async ValueTask OnDisposeAsync()
-    {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
-        {
-            _mapObject = null;
-            return;
-        }
-
-        try
-        {
-            await pluginModule.InvokeVoidAsync("dispose");
-            await pluginModule.DisposeAsync();
-        }
-        finally
-        {
-            _pluginJsModule = null;
-            _mapObject = null;
-        }
-    }
-
-    #endregion
+    // The JS side expects the MapLibre position name ("bottom-left"); the enum already carries that name
+    // through its JSON converter, so the same serializer keeps both representations in sync.
+    private static string ToPositionName(ControlPosition position) =>
+        JsonSerializer.Serialize(position).Trim('"');
 }

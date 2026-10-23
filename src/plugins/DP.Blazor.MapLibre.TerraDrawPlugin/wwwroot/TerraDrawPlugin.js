@@ -1,53 +1,47 @@
-const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+// Terra Draw controls for DP.Blazor.MapLibre, built on @watergis/maplibre-gl-terradraw.
+// The bundled library version is pinned in wwwroot/maplibre-gl-terradraw/VERSION (1.13.2). Upstream members that
+// are not part of the documented library API are accessed only in the helpers of the "Upstream member access"
+// section.
+//
+// State model: every exported function takes the map instance as its first argument. Controls, the active
+// control id and the zoom-gesture bookkeeping live in getMapState, so several maps do not share state.
 
-function contentUrl(relativePath) {
-    return new URL(relativePath, document.baseURI).href;
-}
+import { deleteMapState, getMapState, loadScript, loadStylesheet } from '../DP.Blazor.MapLibre/PluginRuntime.js';
 
-async function ensureMapLibreGlobal() {
-    if (globalThis.maplibregl?.Map) {
-        return;
+const STATE_KEY = 'maplibre-terradraw';
+const DIST_URL = new URL('./maplibre-gl-terradraw/dist/', import.meta.url);
+const SCRIPT_URL = new URL('maplibre-gl-terradraw.umd.js', DIST_URL).href;
+const STYLESHEET_URL = new URL('maplibre-gl-terradraw.css', DIST_URL).href;
+
+// Listener id -> listener record. This is an index only: the records are owned by the per-map control entries.
+// It exists because offListener receives just the listener id from the .NET side.
+const listenerRecords = new Map();
+
+let idCounter = 0;
+
+// crypto.randomUUID is only available in secure contexts (HTTPS / localhost), so plain HTTP hosts need a fallback.
+function createId(prefix) {
+    if (globalThis.crypto?.randomUUID) {
+        return crypto.randomUUID();
     }
 
-    const mapLibre = await import(contentUrl(mapLibreModulePath));
-    await mapLibre.prepareMapLibreGl();
+    idCounter += 1;
+    return `${prefix}-${Date.now().toString(36)}-${idCounter}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isLibraryLoaded() {
+    return Boolean(globalThis.MaplibreTerradrawControl?.MaplibreTerradrawControl);
+}
+
+async function loadDependencies() {
     if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS failed to load');
-    }
-}
-
-const scriptBase = contentUrl('_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/');
-const stylesheetHref = contentUrl('_content/TerraDrawPlugin/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css');
-
-let mapObject;
-let dependenciesLoaded = false;
-let activeControlId = null;
-const controls = new Map();
-const editedFeatureIds = new Map();
-
-function loadScript(src) {
-    if (document.querySelector(`script[src="${src}"]`)) {
-        return Promise.resolve();
+        throw new Error('MapLibre GL JS is not loaded. Register the plugin through MapLibre.RegisterPlugin.');
     }
 
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
-
-function ensureStylesheet() {
-    if (document.querySelector(`link[href="${stylesheetHref}"]`)) {
-        return;
-    }
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = stylesheetHref;
-    document.head.appendChild(link);
+    await Promise.all([
+        loadStylesheet('maplibre-gl-terradraw', STYLESHEET_URL),
+        loadScript('maplibre-gl-terradraw', SCRIPT_URL, isLibraryLoaded),
+    ]);
 }
 
 function getLibrary() {
@@ -57,17 +51,6 @@ function getLibrary() {
     }
 
     return library;
-}
-
-async function loadDependencies() {
-    if (dependenciesLoaded) {
-        return;
-    }
-
-    await ensureMapLibreGlobal();
-    ensureStylesheet();
-    await loadScript(`${scriptBase}maplibre-gl-terradraw.umd.js`);
-    dependenciesLoaded = true;
 }
 
 function getControlClass(controlType) {
@@ -83,8 +66,42 @@ function getControlClass(controlType) {
     }
 }
 
-function resolveControlId(controlId) {
-    const id = controlId ?? activeControlId;
+// ---------------------------------------------------------------------------------------------------------------
+// Per-map state
+// ---------------------------------------------------------------------------------------------------------------
+
+function requireMap(map) {
+    if (!map) {
+        throw new Error('Terra Draw plugin is not initialized for a map.');
+    }
+
+    return map;
+}
+
+function getMapStateFor(map) {
+    return getMapState(requireMap(map), STATE_KEY, () => ({
+        controls: new Map(),
+        activeControlId: null,
+        // Gestures disabled by disableMapZoomGestures, with the values they had before. null when nothing is saved.
+        zoomGestures: null,
+    }));
+}
+
+function createEntry(id, control, controlType, position) {
+    return {
+        id,
+        control,
+        controlType,
+        position,
+        // Feature that is being edited through editFeature; the snapshot is limited to it while set.
+        editedFeatureId: null,
+        // Listener id -> listener record for listeners registered on this control.
+        listeners: new Map(),
+    };
+}
+
+function resolveControlId(state, controlId) {
+    const id = controlId ?? state.activeControlId;
     if (!id) {
         throw new Error('No Terra Draw control is active. Add a control first or pass a controlId.');
     }
@@ -92,9 +109,10 @@ function resolveControlId(controlId) {
     return id;
 }
 
-function getEntry(controlId) {
-    const id = resolveControlId(controlId);
-    const entry = controls.get(id);
+function getEntry(map, controlId = null) {
+    const state = getMapStateFor(map);
+    const id = resolveControlId(state, controlId);
+    const entry = state.controls.get(id);
     if (!entry) {
         throw new Error(`Terra Draw control '${id}' was not found.`);
     }
@@ -102,18 +120,88 @@ function getEntry(controlId) {
     return entry;
 }
 
-function getControl(controlId) {
-    return getEntry(controlId).control;
+function getControl(map, controlId = null) {
+    return getEntry(map, controlId).control;
 }
 
-function getTerraDraw(controlId) {
-    const terraDraw = getControl(controlId).getTerraDrawInstance?.();
+function getTerraDrawOf(entry) {
+    const terraDraw = entry.control.getTerraDrawInstance?.();
     if (!terraDraw) {
         throw new Error('Terra Draw instance is not available yet. Wait for the control to finish initialising.');
     }
 
     return terraDraw;
 }
+
+function getTerraDraw(map, controlId = null) {
+    return getTerraDrawOf(getEntry(map, controlId));
+}
+
+function getMeasureControl(map, controlId = null) {
+    const control = getControl(map, controlId);
+    if (typeof control.recalc !== 'function') {
+        throw new Error('This operation requires MaplibreMeasureControl.');
+    }
+
+    return control;
+}
+
+function getValhallaControl(map, controlId = null) {
+    const entry = getEntry(map, controlId);
+    if (entry.controlType !== 'valhalla') {
+        throw new Error('This operation requires MaplibreValhallaControl.');
+    }
+
+    return entry.control;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Upstream member access (maplibre-gl-terradraw 1.13.2, see VERSION). Keep every direct access to members that
+// the library does not document here, so that a library upgrade only needs changes in this section.
+// ---------------------------------------------------------------------------------------------------------------
+
+// Control toolbar expanded flag (accessor on the control).
+function getExpandedFlag(control) {
+    return control.isExpanded === true;
+}
+
+function setExpandedFlag(control, value) {
+    control.isExpanded = value;
+}
+
+// Delete confirmation flag (accessor on the control, stored in its options).
+function getDeleteConfirmationFlag(control) {
+    return control.showDeleteConfirmation === true;
+}
+
+function setDeleteConfirmationFlag(control, value) {
+    control.showDeleteConfirmation = value;
+}
+
+// Terra Draw exposes `enabled` as a public getter. `_enabled` is the private field of the same state and is kept
+// as a fallback for the pinned version.
+function isTerraDrawEnabled(terraDraw) {
+    return terraDraw.enabled === true || terraDraw._enabled === true;
+}
+
+// Measure unit type accessor. Its setter also triggers a recalculation, so writes must go through it.
+function readMeasureUnitType(control) {
+    return control.measureUnitType;
+}
+
+function writeMeasureUnitType(control, value) {
+    control.measureUnitType = value;
+}
+
+// MapLibre GL JS keeps tap-drag zoom only in the private field TouchZoomRotateHandler._tapDragZoom; there is no
+// public toggle for it. It is used only by the zoom-gesture helpers below. Remove when MapLibre exposes it.
+function getTapDragZoomHandler(map) {
+    return map.touchZoomRotate?._tapDragZoom;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Feature helpers
+// ---------------------------------------------------------------------------------------------------------------
 
 function filterInternalFeatures(features) {
     return features.filter(f =>
@@ -125,260 +213,327 @@ function filterInternalFeatures(features) {
     );
 }
 
-function throttle(func, intervalInMs) {
-    let lastFunc;
-    let lastRan;
-
-    return function (...args) {
-        if (!lastRan) {
-            func.apply(this, args);
-            lastRan = Date.now();
-        } else {
-            clearTimeout(lastFunc);
-            lastFunc = setTimeout(() => {
-                if ((Date.now() - lastRan) >= intervalInMs) {
-                    func.apply(this, args);
-                    lastRan = Date.now();
-                }
-            }, intervalInMs - (Date.now() - lastRan));
-        }
-    };
-}
-
-function removeEntryListeners(entry) {
-    for (const [listenerId, listener] of entry.controlListeners.entries()) {
-        try {
-            entry.control.off(listener.eventType, listener.handler);
-        } catch {
-            // best-effort
-        }
-
-        entry.controlListeners.delete(listenerId);
-    }
-
-    const terraDraw = entry.control.getTerraDrawInstance?.();
-    for (const [listenerId, listener] of entry.terraDrawListeners.entries()) {
-        try {
-            terraDraw?.off(listener.eventType, listener.handler);
-        } catch {
-            // best-effort
-        }
-
-        entry.terraDrawListeners.delete(listenerId);
-    }
-}
-
-export function getSnapshot(controlId = null) {
-    return getSnapshotInternal(controlId);
-}
-
-function getSnapshotInternal(controlId) {
-    const id = resolveControlId(controlId);
-    const snapshot = getTerraDraw(id).getSnapshot();
-    const editedFeatureId = editedFeatureIds.get(id);
-    if (editedFeatureId != null) {
-        return snapshot.filter(f => f.id === editedFeatureId);
+function getEntrySnapshot(entry) {
+    const snapshot = getTerraDrawOf(entry).getSnapshot();
+    if (entry.editedFeatureId != null) {
+        return snapshot.filter(f => f.id === entry.editedFeatureId);
     }
 
     return filterInternalFeatures(snapshot);
 }
 
-function normalizeModeOptions(options) {
-    if (!options) {
-        return options;
-    }
-
-    if (options.modeOptions && !Array.isArray(options.modeOptions)) {
-        return options;
-    }
-
-    return options;
+// Wire shape of every terra-draw 'change' derived event: { ids, type, features }.
+function createChangePayload(entry, ids, type) {
+    return { ids, type, features: getEntrySnapshot(entry) };
 }
+
+function isContentChangeType(type) {
+    return type === 'create' || type === 'update' || type === 'delete';
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Listener plumbing
+// ---------------------------------------------------------------------------------------------------------------
+
+// Leading-edge throttle with trailing call. The latest arguments are delivered; cancel() drops a pending call.
+function throttle(func, intervalInMs) {
+    let timer = null;
+    let lastRan = null;
+    let pendingArgs = [];
+
+    const run = () => {
+        timer = null;
+        lastRan = Date.now();
+        const args = pendingArgs;
+        pendingArgs = [];
+        func(...args);
+    };
+
+    return {
+        call(...args) {
+            pendingArgs = args;
+            if (lastRan === null) {
+                run();
+                return;
+            }
+
+            clearTimeout(timer);
+            timer = setTimeout(run, Math.max(0, intervalInMs - (Date.now() - lastRan)));
+        },
+        cancel() {
+            clearTimeout(timer);
+            timer = null;
+            pendingArgs = [];
+        },
+    };
+}
+
+// Registers a listener on an entry. subscribe(isActive) attaches the handler and returns
+// { unsubscribe, cancelPending }. Handlers must check isActive() before calling .NET, so that a call that is
+// already queued (e.g. a throttled one) does not run after the listener was removed.
+function registerListener(entry, subscribe) {
+    const listenerId = createId('listener');
+    const record = {
+        active: true,
+        unsubscribe: () => {},
+        cancelPending: () => {},
+        dispose: () => {},
+    };
+
+    record.dispose = () => {
+        if (!record.active) {
+            return;
+        }
+
+        record.active = false;
+        record.cancelPending();
+        try {
+            record.unsubscribe();
+        } catch (error) {
+            console.warn(`[TerraDraw] Failed to remove listener ${listenerId}.`, error);
+        }
+
+        entry.listeners.delete(listenerId);
+        listenerRecords.delete(listenerId);
+    };
+
+    entry.listeners.set(listenerId, record);
+    listenerRecords.set(listenerId, record);
+
+    try {
+        const subscription = subscribe(() => record.active);
+        record.unsubscribe = subscription.unsubscribe;
+        record.cancelPending = subscription.cancelPending ?? (() => {});
+    } catch (error) {
+        record.dispose();
+        throw error;
+    }
+
+    return listenerId;
+}
+
+function removeEntryListeners(entry) {
+    for (const record of [...entry.listeners.values()]) {
+        record.dispose();
+    }
+}
+
+// Sends one event to .NET. Payload errors and delivery failures are logged with context, never dropped.
+function notifyDotNet(dotnetReference, description, buildPayload) {
+    let payload;
+    try {
+        payload = JSON.stringify(buildPayload());
+    } catch (error) {
+        console.error(`[TerraDraw] Failed to build the ${description} payload.`, error);
+        return;
+    }
+
+    dotnetReference.invokeMethodAsync('Invoke', payload).catch(error => {
+        console.error(`[TerraDraw] Failed to deliver the ${description} event to .NET.`, error);
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Module lifecycle
+// ---------------------------------------------------------------------------------------------------------------
 
 export async function initialize(map) {
     await loadDependencies();
-    mapObject = map;
+    getMapStateFor(map);
 }
 
-export async function addControl(controlType, options, position = 'top-left', controlId = null) {
-    await loadDependencies();
-
-    if (!mapObject) {
-        throw new Error('Terra Draw plugin is not initialized.');
+export function dispose(map) {
+    if (!map) {
+        return;
     }
 
-    const id = controlId ?? crypto.randomUUID();
-    if (controls.has(id)) {
-        await removeControl(id);
+    removeAllControls(map);
+    deleteMapState(map, STATE_KEY);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Snapshot and controls
+// ---------------------------------------------------------------------------------------------------------------
+
+export function getSnapshot(map, controlId = null) {
+    return getEntrySnapshot(getEntry(map, controlId));
+}
+
+export async function addControl(map, controlType, options, position = 'top-left', controlId = null) {
+    await loadDependencies();
+
+    const state = getMapStateFor(map);
+    const id = controlId ?? createId('terradraw');
+    if (state.controls.has(id)) {
+        removeControl(map, id);
     }
 
     const ControlClass = getControlClass(controlType);
-    const control = new ControlClass(normalizeModeOptions(options) ?? {});
-    mapObject.addControl(control, position);
+    const control = new ControlClass(options ?? {});
+    map.addControl(control, position);
     control.activate?.();
 
-    controls.set(id, {
-        control,
-        controlType,
-        position,
-        controlListeners: new Map(),
-        terraDrawListeners: new Map(),
-    });
-
-    activeControlId = id;
+    state.controls.set(id, createEntry(id, control, controlType, position));
+    state.activeControlId = id;
     return id;
 }
 
-export function setActiveControl(controlId) {
-    if (!controls.has(controlId)) {
+export function setActiveControl(map, controlId) {
+    const state = getMapStateFor(map);
+    if (!state.controls.has(controlId)) {
         throw new Error(`Terra Draw control '${controlId}' was not found.`);
     }
 
-    activeControlId = controlId;
+    state.activeControlId = controlId;
 }
 
-export function getActiveControlId() {
-    return activeControlId;
+export function getActiveControlId(map) {
+    return getMapStateFor(map).activeControlId;
 }
 
-export function getControlIds() {
-    return [...controls.keys()];
+export function getControlIds(map) {
+    return [...getMapStateFor(map).controls.keys()];
 }
 
-export function getControlType(controlId) {
-    return getEntry(controlId).controlType;
+export function getControlType(map, controlId = null) {
+    return getEntry(map, controlId).controlType;
 }
 
-export function removeControl(controlId = null) {
-    const id = controlId ?? activeControlId;
+export function removeControl(map, controlId = null) {
+    const state = getMapStateFor(map);
+    const id = controlId ?? state.activeControlId;
     if (!id) {
         return;
     }
 
-    const entry = controls.get(id);
+    const entry = state.controls.get(id);
     if (!entry) {
         return;
     }
 
+    // Listeners first, then the control itself, then the bookkeeping.
     removeEntryListeners(entry);
+    map.removeControl(entry.control);
+    state.controls.delete(id);
+    restoreZoomGestures(map, state);
 
-    if (mapObject) {
-        mapObject.removeControl(entry.control);
-    }
-
-    controls.delete(id);
-    editedFeatureIds.delete(id);
-
-    if (activeControlId === id) {
-        activeControlId = controls.size > 0 ? [...controls.keys()][0] : null;
+    if (state.activeControlId === id) {
+        state.activeControlId = state.controls.size > 0 ? [...state.controls.keys()][0] : null;
     }
 }
 
-export function removeAllControls() {
-    for (const id of [...controls.keys()]) {
-        removeControl(id);
+export function removeAllControls(map) {
+    const state = getMapStateFor(map);
+    for (const id of [...state.controls.keys()]) {
+        removeControl(map, id);
     }
+
+    restoreZoomGestures(map, state);
 }
 
-export function activateControl(controlId = null) {
-    getControl(controlId).activate?.();
+export function activateControl(map, controlId = null) {
+    getControl(map, controlId).activate?.();
 }
 
-export function deactivateControl(controlId = null) {
-    getControl(controlId).deactivate?.();
+export function deactivateControl(map, controlId = null) {
+    getControl(map, controlId).deactivate?.();
 }
 
-export function setControlExpanded(expanded, controlId = null) {
-    getControl(controlId).isExpanded = expanded;
+export function setControlExpanded(map, expanded, controlId = null) {
+    setExpandedFlag(getControl(map, controlId), expanded);
 }
 
-export function getControlExpanded(controlId = null) {
-    return getControl(controlId).isExpanded === true;
+export function getControlExpanded(map, controlId = null) {
+    return getExpandedFlag(getControl(map, controlId));
 }
 
-export function setShowDeleteConfirmation(value, controlId = null) {
-    getControl(controlId).showDeleteConfirmation = value;
+export function setShowDeleteConfirmation(map, value, controlId = null) {
+    setDeleteConfirmationFlag(getControl(map, controlId), value);
 }
 
-export function getShowDeleteConfirmation(controlId = null) {
-    return getControl(controlId).showDeleteConfirmation === true;
+export function getShowDeleteConfirmation(map, controlId = null) {
+    return getDeleteConfirmationFlag(getControl(map, controlId));
 }
 
-export function resetActiveMode(controlId = null) {
-    getControl(controlId).resetActiveMode?.();
+export function resetActiveMode(map, controlId = null) {
+    getControl(map, controlId).resetActiveMode?.();
 }
 
-export function setMode(mode, controlId = null) {
-    const id = resolveControlId(controlId);
-    getTerraDraw(id).setMode(mode);
+// ---------------------------------------------------------------------------------------------------------------
+// Terra Draw instance
+// ---------------------------------------------------------------------------------------------------------------
+
+export function setMode(map, mode, controlId = null) {
+    const entry = getEntry(map, controlId);
+    getTerraDrawOf(entry).setMode(mode);
 
     if (mode !== 'select') {
-        editedFeatureIds.delete(id);
+        entry.editedFeatureId = null;
     }
 }
 
-export function getMode(controlId = null) {
-    return getTerraDraw(controlId).getMode();
+export function getMode(map, controlId = null) {
+    return getTerraDraw(map, controlId).getMode();
 }
 
-export function getFeatures(onlySelected = false, controlId = null) {
-    const features = getControl(controlId).getFeatures?.(onlySelected);
+export function getFeatures(map, onlySelected = false, controlId = null) {
+    const features = getControl(map, controlId).getFeatures?.(onlySelected);
     return features?.features ?? [];
 }
 
-export function addFeatures(featuresJson, controlId = null) {
+export function addFeatures(map, featuresJson, controlId = null) {
     const parsed = JSON.parse(featuresJson);
     const features = parsed.type === 'FeatureCollection'
         ? parsed.features
         : [parsed];
 
-    return getTerraDraw(controlId).addFeatures(features);
+    return getTerraDraw(map, controlId).addFeatures(features);
 }
 
-export function removeFeatures(featureIds, controlId = null) {
-    getTerraDraw(controlId).removeFeatures(featureIds);
+export function removeFeatures(map, featureIds, controlId = null) {
+    getTerraDraw(map, controlId).removeFeatures(featureIds);
 }
 
-export function clearFeatures(controlId = null) {
-    getTerraDraw(controlId).clear?.();
+export function clearFeatures(map, controlId = null) {
+    getTerraDraw(map, controlId).clear?.();
 }
 
-export function startDrawing(controlId = null) {
-    getTerraDraw(controlId).start();
+export function startDrawing(map, controlId = null) {
+    getTerraDraw(map, controlId).start();
 }
 
-export function stopDrawing(controlId = null) {
-    const id = resolveControlId(controlId);
-    const terraDraw = getTerraDraw(id);
+export function stopDrawing(map, controlId = null) {
+    const entry = getEntry(map, controlId);
+    const terraDraw = getTerraDrawOf(entry);
     terraDraw.setMode('static');
     terraDraw.stop();
-    editedFeatureIds.delete(id);
+    entry.editedFeatureId = null;
 }
 
-export function isDrawingEnabled(controlId = null) {
-    const terraDraw = getTerraDraw(controlId);
-    return terraDraw.enabled === true || terraDraw._enabled === true;
+export function isDrawingEnabled(map, controlId = null) {
+    return isTerraDrawEnabled(getTerraDraw(map, controlId));
 }
 
-export function selectFeature(featureId, controlId = null) {
-    getTerraDraw(controlId).selectFeature?.(featureId);
+export function selectFeature(map, featureId, controlId = null) {
+    getTerraDraw(map, controlId).selectFeature?.(featureId);
 }
 
-export function updateModeOptions(mode, options, controlId = null) {
-    getTerraDraw(controlId).updateModeOptions(mode, options ?? {});
+export function updateModeOptions(map, mode, options, controlId = null) {
+    getTerraDraw(map, controlId).updateModeOptions(mode, options ?? {});
 }
 
-export function editFeature(featureJson, mode, controlId = null) {
-    const id = resolveControlId(controlId);
-    const editedFeatureId = editedFeatureIds.get(id);
-    if (editedFeatureId != null) {
+export function editFeature(map, featureJson, mode, controlId = null) {
+    const entry = getEntry(map, controlId);
+    const terraDraw = getTerraDrawOf(entry);
+
+    if (entry.editedFeatureId != null) {
         try {
-            getTerraDraw(id).removeFeatures([editedFeatureId]);
-        } catch {
-            // best-effort
+            terraDraw.removeFeatures([entry.editedFeatureId]);
+        } catch (error) {
+            console.warn('[TerraDraw] Failed to remove the previously edited feature.', error);
         }
 
-        editedFeatureIds.delete(id);
+        entry.editedFeatureId = null;
     }
 
     const feature = JSON.parse(featureJson);
@@ -386,47 +541,42 @@ export function editFeature(featureJson, mode, controlId = null) {
     feature.properties = feature.properties || {};
     feature.properties.mode = mode;
 
-    const result = getTerraDraw(id).addFeatures([feature]);
-    const entry = Array.isArray(result) ? result[0] : null;
-    if (entry?.valid === false) {
-        throw new Error(entry.reason ?? 'Terra Draw rejected the feature.');
+    const result = terraDraw.addFeatures([feature]);
+    const added = Array.isArray(result) ? result[0] : null;
+    if (added?.valid === false) {
+        throw new Error(added.reason ?? 'Terra Draw rejected the feature.');
     }
 
-    getTerraDraw(id).setMode('select');
+    terraDraw.setMode('select');
 
-    const featureId = entry?.id;
+    const featureId = added?.id;
     if (featureId != null) {
-        editedFeatureIds.set(id, featureId);
-        if (typeof getTerraDraw(id).selectFeature === 'function') {
+        entry.editedFeatureId = featureId;
+        if (typeof terraDraw.selectFeature === 'function') {
             try {
-                getTerraDraw(id).selectFeature(featureId);
-            } catch {
-                // best-effort
+                terraDraw.selectFeature(featureId);
+            } catch (error) {
+                console.warn('[TerraDraw] Failed to select the edited feature.', error);
             }
         }
     }
 }
 
-export function finishGeometry() {
-    if (!mapObject) {
-        return;
-    }
-
+// Limitation: Terra Draw listens for Enter on the map canvas, which is shared by all controls of the map.
+// The keyup is dispatched on that canvas, so it reaches whichever control is drawing. controlId is not accepted
+// by the .NET API; the active control is validated (an error is thrown when there is none) but not targeted.
+export function finishGeometry(map) {
+    getEntry(map, null);
     const event = new KeyboardEvent('keyup', { key: 'Enter' });
-    mapObject.getCanvas().dispatchEvent(event);
+    map.getCanvas().dispatchEvent(event);
 }
 
-export function recalc(controlId = null) {
-    const control = getControl(controlId);
-    if (typeof control.recalc !== 'function') {
-        throw new Error('Recalc is only available on MaplibreMeasureControl.');
-    }
+// ---------------------------------------------------------------------------------------------------------------
+// Library helpers (no map state needed; they only use the loaded library)
+// ---------------------------------------------------------------------------------------------------------------
 
-    control.recalc();
-}
-
-export function cleanControlStyle(styleJson, options, controlId = null) {
-    const control = getControl(controlId);
+export function cleanControlStyle(map, styleJson, options, controlId = null) {
+    const control = getControl(map, controlId);
     const style = JSON.parse(styleJson);
     const cleaned = control.cleanStyle(style, options ?? {});
     return JSON.stringify(cleaned);
@@ -503,270 +653,320 @@ export function convertElevation(valueInMeters, unit) {
     return getLibrary().convertElevation(valueInMeters, unit);
 }
 
-function getMeasureControl(controlId = null) {
-    const control = getControl(controlId);
-    if (typeof control.recalc !== 'function') {
-        throw new Error('This operation requires MaplibreMeasureControl.');
-    }
+// ---------------------------------------------------------------------------------------------------------------
+// Measure control properties
+// ---------------------------------------------------------------------------------------------------------------
 
-    return control;
+export function recalc(map, controlId = null) {
+    getMeasureControl(map, controlId).recalc();
 }
 
-function getValhallaControl(controlId = null) {
-    const entry = getEntry(controlId);
-    if (entry.controlType !== 'valhalla') {
-        throw new Error('This operation requires MaplibreValhallaControl.');
-    }
-
-    return entry.control;
+export function getMeasureUnitType(map, controlId = null) {
+    return readMeasureUnitType(getMeasureControl(map, controlId));
 }
 
-export function getMeasureUnitType(controlId = null) {
-    return getMeasureControl(controlId).measureUnitType;
+export function setMeasureUnitType(map, value, controlId = null) {
+    writeMeasureUnitType(getMeasureControl(map, controlId), value);
 }
 
-export function setMeasureUnitType(value, controlId = null) {
-    getMeasureControl(controlId).measureUnitType = value;
+export function getDistancePrecision(map, controlId = null) {
+    return getMeasureControl(map, controlId).distancePrecision;
 }
 
-export function getDistancePrecision(controlId = null) {
-    return getMeasureControl(controlId).distancePrecision;
+export function setDistancePrecision(map, value, controlId = null) {
+    getMeasureControl(map, controlId).distancePrecision = value;
 }
 
-export function setDistancePrecision(value, controlId = null) {
-    getMeasureControl(controlId).distancePrecision = value;
+export function getDistanceUnit(map, controlId = null) {
+    return getMeasureControl(map, controlId).distanceUnit;
 }
 
-export function getDistanceUnit(controlId = null) {
-    return getMeasureControl(controlId).distanceUnit;
+export function setDistanceUnit(map, value, controlId = null) {
+    getMeasureControl(map, controlId).distanceUnit = value;
 }
 
-export function setDistanceUnit(value, controlId = null) {
-    getMeasureControl(controlId).distanceUnit = value;
+export function getAreaPrecision(map, controlId = null) {
+    return getMeasureControl(map, controlId).areaPrecision;
 }
 
-export function getAreaPrecision(controlId = null) {
-    return getMeasureControl(controlId).areaPrecision;
+export function setAreaPrecision(map, value, controlId = null) {
+    getMeasureControl(map, controlId).areaPrecision = value;
 }
 
-export function setAreaPrecision(value, controlId = null) {
-    getMeasureControl(controlId).areaPrecision = value;
+export function getAreaUnit(map, controlId = null) {
+    return getMeasureControl(map, controlId).areaUnit;
 }
 
-export function getAreaUnit(controlId = null) {
-    return getMeasureControl(controlId).areaUnit;
+export function setAreaUnit(map, value, controlId = null) {
+    getMeasureControl(map, controlId).areaUnit = value;
 }
 
-export function setAreaUnit(value, controlId = null) {
-    getMeasureControl(controlId).areaUnit = value;
+export function getMeasureUnitSymbols(map, controlId = null) {
+    return getMeasureControl(map, controlId).measureUnitSymbols;
 }
 
-export function getMeasureUnitSymbols(controlId = null) {
-    return getMeasureControl(controlId).measureUnitSymbols;
+export function setMeasureUnitSymbols(map, value, controlId = null) {
+    getMeasureControl(map, controlId).measureUnitSymbols = value;
 }
 
-export function setMeasureUnitSymbols(value, controlId = null) {
-    getMeasureControl(controlId).measureUnitSymbols = value;
+export function getComputeElevation(map, controlId = null) {
+    return getMeasureControl(map, controlId).computeElevation === true;
 }
 
-export function getComputeElevation(controlId = null) {
-    return getMeasureControl(controlId).computeElevation === true;
+export function setComputeElevation(map, value, controlId = null) {
+    getMeasureControl(map, controlId).computeElevation = value;
 }
 
-export function setComputeElevation(value, controlId = null) {
-    getMeasureControl(controlId).computeElevation = value;
+export function getFontGlyphs(map, controlId = null) {
+    return getControl(map, controlId).fontGlyphs ?? [];
 }
 
-export function getFontGlyphs(controlId = null) {
-    const control = getControl(controlId);
-    return control.fontGlyphs ?? [];
+export function setFontGlyphs(map, value, controlId = null) {
+    getControl(map, controlId).fontGlyphs = value;
 }
 
-export function setFontGlyphs(value, controlId = null) {
-    getControl(controlId).fontGlyphs = value;
+// ---------------------------------------------------------------------------------------------------------------
+// Valhalla control properties
+// ---------------------------------------------------------------------------------------------------------------
+
+export function getValhallaUrl(map, controlId = null) {
+    return getValhallaControl(map, controlId).valhallaUrl;
 }
 
-export function getValhallaUrl(controlId = null) {
-    return getValhallaControl(controlId).valhallaUrl;
+export function setValhallaUrl(map, value, controlId = null) {
+    getValhallaControl(map, controlId).valhallaUrl = value;
 }
 
-export function setValhallaUrl(value, controlId = null) {
-    getValhallaControl(controlId).valhallaUrl = value;
+export function getRoutingCostingModel(map, controlId = null) {
+    return getValhallaControl(map, controlId).routingCostingModel;
 }
 
-export function getRoutingCostingModel(controlId = null) {
-    return getValhallaControl(controlId).routingCostingModel;
+export function setRoutingCostingModel(map, value, controlId = null) {
+    getValhallaControl(map, controlId).routingCostingModel = value;
 }
 
-export function setRoutingCostingModel(value, controlId = null) {
-    getValhallaControl(controlId).routingCostingModel = value;
+export function getRoutingDistanceUnit(map, controlId = null) {
+    return getValhallaControl(map, controlId).routingDistanceUnit;
 }
 
-export function getRoutingDistanceUnit(controlId = null) {
-    return getValhallaControl(controlId).routingDistanceUnit;
+export function setRoutingDistanceUnit(map, value, controlId = null) {
+    getValhallaControl(map, controlId).routingDistanceUnit = value;
 }
 
-export function setRoutingDistanceUnit(value, controlId = null) {
-    getValhallaControl(controlId).routingDistanceUnit = value;
+export function getTimeIsochroneCostingModel(map, controlId = null) {
+    return getValhallaControl(map, controlId).timeIsochroneCostingModel;
 }
 
-export function getTimeIsochroneCostingModel(controlId = null) {
-    return getValhallaControl(controlId).timeIsochroneCostingModel;
+export function setTimeIsochroneCostingModel(map, value, controlId = null) {
+    getValhallaControl(map, controlId).timeIsochroneCostingModel = value;
 }
 
-export function setTimeIsochroneCostingModel(value, controlId = null) {
-    getValhallaControl(controlId).timeIsochroneCostingModel = value;
+export function getDistanceIsochroneCostingModel(map, controlId = null) {
+    return getValhallaControl(map, controlId).distanceIsochroneCostingModel;
 }
 
-export function getDistanceIsochroneCostingModel(controlId = null) {
-    return getValhallaControl(controlId).distanceIsochroneCostingModel;
+export function setDistanceIsochroneCostingModel(map, value, controlId = null) {
+    getValhallaControl(map, controlId).distanceIsochroneCostingModel = value;
 }
 
-export function setDistanceIsochroneCostingModel(value, controlId = null) {
-    getValhallaControl(controlId).distanceIsochroneCostingModel = value;
+export function getIsochroneContours(map, controlId = null) {
+    return getValhallaControl(map, controlId).isochroneContours;
 }
 
-export function getIsochroneContours(controlId = null) {
-    return getValhallaControl(controlId).isochroneContours;
+export function setIsochroneContours(map, value, controlId = null) {
+    getValhallaControl(map, controlId).isochroneContours = value;
 }
 
-export function setIsochroneContours(value, controlId = null) {
-    getValhallaControl(controlId).isochroneContours = value;
+// ---------------------------------------------------------------------------------------------------------------
+// Listeners
+// ---------------------------------------------------------------------------------------------------------------
+
+// Control (toolbar) events. Payload: the event args, or {} when the library dispatches none.
+export function onControlEvent(map, eventType, dotnetReference, controlId = null) {
+    const entry = getEntry(map, controlId);
+
+    return registerListener(entry, isActive => {
+        const handler = args => {
+            if (!isActive()) {
+                return;
+            }
+
+            notifyDotNet(dotnetReference, `control '${eventType}'`, () => args ?? {});
+        };
+
+        entry.control.on(eventType, handler);
+        return { unsubscribe: () => entry.control.off(eventType, handler) };
+    });
 }
 
-export function onControlEvent(eventType, dotnetReference, controlId = null) {
-    const entry = getEntry(controlId);
-    const listenerId = crypto.randomUUID();
-    const handler = (args) => dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(args ?? {}));
+// Terra Draw instance events. Payload shapes:
+//   finish                -> { id, action, features }
+//   change                -> { ids, type, features }   (throttled calls only deliver create/update/delete)
+//   any other event type  -> { args, features }
+export function onTerraDrawEvent(map, eventType, dotnetReference, controlId = null, throttleTime = null) {
+    const entry = getEntry(map, controlId);
 
-    entry.control.on(eventType, handler);
-    entry.controlListeners.set(listenerId, { eventType, handler });
+    return registerListener(entry, isActive => {
+        const terraDraw = getTerraDrawOf(entry);
+        let handler;
+        let cancelPending = null;
 
-    return listenerId;
+        if (eventType === 'finish') {
+            handler = (id, context) => {
+                if (!isActive()) {
+                    return;
+                }
+
+                notifyDotNet(dotnetReference, 'finish', () => ({
+                    id,
+                    action: context?.action,
+                    features: getEntrySnapshot(entry),
+                }));
+            };
+        } else if (eventType === 'change' && throttleTime != null) {
+            const throttled = throttle((ids, type) => {
+                if (!isActive()) {
+                    return;
+                }
+
+                notifyDotNet(dotnetReference, 'change', () => createChangePayload(entry, ids, type));
+            }, throttleTime);
+
+            handler = (ids, type) => {
+                if (isContentChangeType(type)) {
+                    throttled.call(ids, type);
+                }
+            };
+            cancelPending = () => throttled.cancel();
+        } else if (eventType === 'change') {
+            handler = (ids, type) => {
+                if (!isActive()) {
+                    return;
+                }
+
+                notifyDotNet(dotnetReference, 'change', () => createChangePayload(entry, ids, type));
+            };
+        } else {
+            handler = (...args) => {
+                if (!isActive()) {
+                    return;
+                }
+
+                notifyDotNet(dotnetReference, eventType, () => ({
+                    args,
+                    features: getEntrySnapshot(entry),
+                }));
+            };
+        }
+
+        terraDraw.on(eventType, handler);
+        return {
+            unsubscribe: () => terraDraw.off(eventType, handler),
+            cancelPending: cancelPending ?? (() => {}),
+        };
+    });
+}
+
+export function onTerraDrawFinish(map, dotnetReference, controlId = null) {
+    return onTerraDrawEvent(map, 'finish', dotnetReference, controlId);
+}
+
+// Deleted features: the 'change' event with type 'delete'. Payload: { ids, type, features }.
+export function onTerraDrawDelete(map, dotnetReference, controlId = null) {
+    const entry = getEntry(map, controlId);
+
+    return registerListener(entry, isActive => {
+        const terraDraw = getTerraDrawOf(entry);
+        const handler = (ids, type) => {
+            if (!isActive() || type !== 'delete') {
+                return;
+            }
+
+            notifyDotNet(dotnetReference, 'delete', () => createChangePayload(entry, ids, type));
+        };
+
+        terraDraw.on('change', handler);
+        return { unsubscribe: () => terraDraw.off('change', handler) };
+    });
+}
+
+// Throttled content changes. Payload: { ids, type, features }.
+export function onTerraDrawChange(map, dotnetReference, controlId = null, throttleTime = 100) {
+    const entry = getEntry(map, controlId);
+
+    return registerListener(entry, isActive => {
+        const terraDraw = getTerraDrawOf(entry);
+        const throttled = throttle((ids, type) => {
+            if (!isActive()) {
+                return;
+            }
+
+            notifyDotNet(dotnetReference, 'change', () => createChangePayload(entry, ids, type));
+        }, throttleTime);
+
+        const handler = (ids, type) => {
+            if (isContentChangeType(type)) {
+                throttled.call(ids, type);
+            }
+        };
+
+        terraDraw.on('change', handler);
+        return {
+            unsubscribe: () => terraDraw.off('change', handler),
+            cancelPending: () => throttled.cancel(),
+        };
+    });
 }
 
 export function offListener(listenerId) {
-    for (const entry of controls.values()) {
-        const controlListener = entry.controlListeners.get(listenerId);
-        if (controlListener) {
-            entry.control.off(controlListener.eventType, controlListener.handler);
-            entry.controlListeners.delete(listenerId);
-            return;
-        }
-
-        const terraListener = entry.terraDrawListeners.get(listenerId);
-        if (terraListener) {
-            const terraDraw = entry.control.getTerraDrawInstance?.();
-            terraDraw?.off(terraListener.eventType, terraListener.handler);
-            entry.terraDrawListeners.delete(listenerId);
-            return;
-        }
-    }
+    listenerRecords.get(listenerId)?.dispose();
 }
 
-export function onTerraDrawEvent(eventType, dotnetReference, controlId = null, throttleTime = null) {
-    const entry = getEntry(controlId);
-    const terraDraw = getTerraDraw(controlId);
-    const listenerId = crypto.randomUUID();
+// ---------------------------------------------------------------------------------------------------------------
+// Map zoom gestures
+// ---------------------------------------------------------------------------------------------------------------
 
-    let handler;
-    if (eventType === 'finish') {
-        handler = (id, context) => {
-            dotnetReference.invokeMethodAsync('Invoke', JSON.stringify({
-                id,
-                action: context?.action,
-                features: getSnapshotInternal(controlId),
-            }));
-        };
-    } else if (eventType === 'change' && throttleTime != null) {
-        const throttledInvoke = throttle(() => {
-            dotnetReference.invokeMethodAsync('Invoke', JSON.stringify({
-                features: getSnapshotInternal(controlId),
-            }));
-        }, throttleTime);
-        handler = (ids, type) => {
-            if (type === 'create' || type === 'update' || type === 'delete') {
-                throttledInvoke();
-            }
-        };
-    } else if (eventType === 'change') {
-        handler = (ids, type) => {
-            dotnetReference.invokeMethodAsync('Invoke', JSON.stringify({
-                ids,
-                type,
-                features: getSnapshotInternal(controlId),
-            }));
-        };
-    } else {
-        handler = (...args) => {
-            dotnetReference.invokeMethodAsync('Invoke', JSON.stringify({
-                args,
-                features: getSnapshotInternal(controlId),
-            }));
-        };
-    }
-
-    terraDraw.on(eventType, handler);
-    entry.terraDrawListeners.set(listenerId, { eventType, handler });
-    return listenerId;
-}
-
-export function onTerraDrawFinish(dotnetReference, controlId = null) {
-    return onTerraDrawEvent('finish', dotnetReference, controlId);
-}
-
-export function onTerraDrawDelete(dotnetReference, controlId = null) {
-    const entry = getEntry(controlId);
-    const listenerId = crypto.randomUUID();
-    const handler = (ids, type) => {
-        if (type === 'delete') {
-            dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(getSnapshotInternal(controlId)));
-        }
-    };
-
-    getTerraDraw(controlId).on('change', handler);
-    entry.terraDrawListeners.set(listenerId, { eventType: 'change', handler });
-    return listenerId;
-}
-
-export function onTerraDrawChange(dotnetReference, throttleTime = 100, controlId = null) {
-    const entry = getEntry(controlId);
-    const listenerId = crypto.randomUUID();
-    const throttledInvoke = throttle(() => {
-        dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(getSnapshotInternal(controlId)));
-    }, throttleTime);
-
-    const handler = (ids, type) => {
-        if (type === 'create' || type === 'update' || type === 'delete') {
-            throttledInvoke();
-        }
-    };
-
-    getTerraDraw(controlId).on('change', handler);
-    entry.terraDrawListeners.set(listenerId, { eventType: 'change', handler });
-    return listenerId;
-}
-
-export function disableMapZoomGestures() {
-    if (!mapObject) {
+// Disables double-click zoom and tap-drag zoom and remembers which of them were enabled before. Gestures are
+// restored by enableMapZoomGestures, when a control is removed, or when the plugin is detached or disposed.
+export function disableMapZoomGestures(map) {
+    const state = getMapStateFor(map);
+    if (state.zoomGestures) {
         return;
     }
 
-    mapObject.doubleClickZoom.disable();
-    mapObject.touchZoomRotate?._tapDragZoom?.disable?.();
+    const tapDragZoom = getTapDragZoomHandler(map);
+    state.zoomGestures = {
+        doubleClickZoom: map.doubleClickZoom.isEnabled() === true,
+        tapDragZoom: tapDragZoom?.isEnabled?.() === true,
+    };
+
+    map.doubleClickZoom.disable();
+    tapDragZoom?.disable?.();
 }
 
-export function enableMapZoomGestures() {
-    if (!mapObject) {
+export function enableMapZoomGestures(map) {
+    const state = getMapStateFor(map);
+    if (state.zoomGestures) {
+        restoreZoomGestures(map, state);
         return;
     }
 
-    mapObject.doubleClickZoom.enable();
-    mapObject.touchZoomRotate?._tapDragZoom?.enable?.();
+    map.doubleClickZoom.enable();
+    getTapDragZoomHandler(map)?.enable?.();
 }
 
-export function dispose() {
-    removeAllControls();
-    mapObject = null;
-    activeControlId = null;
+function restoreZoomGestures(map, state) {
+    const saved = state.zoomGestures;
+    if (!saved) {
+        return;
+    }
+
+    state.zoomGestures = null;
+    if (saved.doubleClickZoom) {
+        map.doubleClickZoom.enable();
+    }
+
+    if (saved.tapDragZoom) {
+        getTapDragZoomHandler(map)?.enable?.();
+    }
 }

@@ -78,9 +78,18 @@ public class FlyToOptions : IAnimationOptions, ICameraOptions
     public double? Duration { get; set; }
 
     /// <inheritdoc/>
-    [JsonPropertyName("easing")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        /// <summary>
+    /// Easing function. It is sampled (see <see cref="EasingCurve"/>) and sent to the browser as <c>easingCurve</c>.
+    /// </summary>
+    [JsonIgnore]
     public Func<double, double>? Easing { get; set; }
+
+    /// <summary>
+    /// Samples of <see cref="Easing"/> sent to the browser in place of the delegate. Not set by callers.
+    /// </summary>
+    [JsonPropertyName("easingCurve")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? EasingCurveSamples => Easing is null ? null : EasingCurve.Sample(Easing);
 
     /// <inheritdoc/>
     [JsonPropertyName("essential")]

@@ -12,7 +12,6 @@ import {
     recordSource,
     recordSourceData,
     recordSourceTiles,
-    recordSourceUrl,
     replayOverlay,
     skipCacheFor,
 } from './js/runtime/index.js'
@@ -73,6 +72,24 @@ export async function prepareMapLibreGl(bundleVersion) {
     // version through so the worker is busted too.
     globalThis.maplibregl.setWorkerUrl(
         new URL(mapLibreGlWorker + versionQuery, import.meta.url).href);
+}
+
+/**
+ * Registers the right-to-left text shaping plugin (Arabic, Hebrew). The plugin is page-wide, not per map.
+ * @param {string} url - URL of the RTL text plugin script.
+ * @param {boolean} lazy - Load the plugin only when right-to-left text is first rendered.
+ * @returns {Promise<void>}
+ */
+export async function setRtlTextPlugin(url, lazy = false) {
+    await globalThis.maplibregl.setRTLTextPlugin(url, lazy);
+}
+
+/**
+ * Returns the RTL text plugin status: 'unavailable', 'deferred', 'requested', 'loading', 'loaded' or 'error'.
+ * @returns {string}
+ */
+export function getRtlTextPluginStatus() {
+    return globalThis.maplibregl.getRTLTextPluginStatus();
 }
 
 /**
@@ -147,12 +164,14 @@ function normalizeRequestParameters(result, fallbackUrl) {
 
 function createTransformRequestFn(dotnetReference) {
     return (url, resourceType) => {
-        const payload = JSON.stringify({ url, resourceType });
-        const resultJson = dotnetReference.invokeMethod('Invoke', payload);
-
+        // MapLibre needs this result synchronously, so the .NET handler is invoked synchronously
+        // (WebAssembly only). Any failure falls back to the original URL instead of breaking the tile request.
         try {
+            const payload = JSON.stringify({ url, resourceType });
+            const resultJson = dotnetReference.invokeMethod('Invoke', payload);
             return normalizeRequestParameters(JSON.parse(resultJson), url);
-        } catch {
+        } catch (error) {
+            console.warn('transformRequest callback failed; using the original URL.', error);
             return { url };
         }
     };
@@ -169,8 +188,18 @@ function createTransformConstrainFn(dotnetReference) {
             elevation: transform.elevation,
         });
 
-        const resultJson = dotnetReference.invokeMethod('Invoke', payload);
-        const result = JSON.parse(resultJson);
+        let result;
+        try {
+            result = JSON.parse(dotnetReference.invokeMethod('Invoke', payload));
+        } catch (error) {
+            console.warn('transformConstrain callback failed; keeping the proposed camera state.', error);
+            return transform;
+        }
+
+        if (!result || typeof result !== 'object') {
+            return transform;
+        }
+
         if (result.center) {
             transform.center = result.center;
         }
@@ -378,7 +407,7 @@ function createMapEventHandler(dotnetReference, throttleMs) {
             return;
         }
 
-        // Never mutate MapLibre's event object — clone a compact DTO instead.
+        // Never mutate MapLibre's event object вЂ” clone a compact DTO instead.
         const dto = createCompactMapEventDto(e);
         const result = JSON.stringify(dto);
 
@@ -673,10 +702,14 @@ export function addGeolocateControl(container, options, position) {
     const map = mapInstances[container];
 
     if (options === undefined || options === null) {
-        map.addControl(new globalThis.maplibregl.GeolocateControl(), position || undefined);
-    } else {
-        map.addControl(new globalThis.maplibregl.GeolocateControl(options), position || undefined);
+        const control = new globalThis.maplibregl.GeolocateControl();
+        map.addControl(control, position || undefined);
+        return control;
     }
+
+    const control = new globalThis.maplibregl.GeolocateControl(options);
+    map.addControl(control, position || undefined);
+    return control;
 }
 
 /**
@@ -690,10 +723,14 @@ export function addNavigationControl(container, options, position) {
     const map = mapInstances[container];
 
     if (options === undefined || options === null) {
-        map.addControl(new globalThis.maplibregl.NavigationControl(), position || undefined);
-    } else {
-        map.addControl(new globalThis.maplibregl.NavigationControl(options), position || undefined);
+        const control = new globalThis.maplibregl.NavigationControl();
+        map.addControl(control, position || undefined);
+        return control;
     }
+
+    const control = new globalThis.maplibregl.NavigationControl(options);
+    map.addControl(control, position || undefined);
+    return control;
 }
 
 
@@ -707,7 +744,7 @@ export function addNavigationControl(container, options, position) {
 export function addScaleControl(container, options, position) {
     const map = mapInstances[container];
     if (!map) {
-        return;
+        return null;
     }
 
     const scaleControl = (options === undefined || options === null)
@@ -716,6 +753,7 @@ export function addScaleControl(container, options, position) {
 
     map.addControl(scaleControl, position || undefined);
     scaleControlInstances[container] = scaleControl;
+    return scaleControl;
 }
 
 /**
@@ -955,10 +993,10 @@ export function setSourceTiles(container, id, tiles) {
  * Adds a tile source when missing; otherwise updates it with MapLibre public APIs only.
  * Native RasterTileSource/VectorTileSource expose setTiles (and setUrl), not setBounds.
  * bounds / minzoom / maxzoom / tileSize take effect only in the addSource specification,
- * so those changes recreate the source via removeLayer → removeSource → addSource → addLayer.
+ * so those changes recreate the source via removeLayer в†’ removeSource в†’ addSource в†’ addLayer.
  * @param {string} container
  * @param {string} id
- * @param {object} source - MapLibre SourceSpecification (type, tiles, bounds, …).
+ * @param {object} source - MapLibre SourceSpecification (type, tiles, bounds, вЂ¦).
  * @returns {"added"|"updated"}
  */
 export function upsertTileSource(container, id, source) {
@@ -980,7 +1018,7 @@ export function upsertTileSource(container, id, source) {
         (nextUrl != null && nextUrl !== current.url)
         || (nextTiles != null && !sameTileList(nextTiles, current.tiles));
     if (tileSourceSpecNeedsReplace(current, source) || locationChanged) {
-        // setTiles/setUrl keep MapLibre worker tiles keyed by source id — PMTiles
+        // setTiles/setUrl keep MapLibre worker tiles keyed by source id вЂ” PMTiles
         // archives for a new hour/day would never appear. Recreate the source.
         replaceTileSource(map, id, source);
         recordSource(overlayFor(container), id, source);
@@ -1037,33 +1075,6 @@ function replaceTileSource(map, id, source) {
     for (const layer of dependent) {
         map.addLayer(layer, beforeId);
     }
-}
-
-/**
- * @deprecated Prefer {@link setSourceTiles}. Kept for transaction/API compatibility.
- */
-export function setVectorSourceTiles(container, id, tiles) {
-    setSourceTiles(container, id, tiles);
-}
-
-/**
- * Updates the TileJSON / style URL for an existing source that supports setUrl.
- * @param {string} container - The map container.
- * @param {string} id - The source id.
- * @param {string} url - The new source URL.
- */
-export function setSourceUrl(container, id, url) {
-    const source = mapInstances[container].getSource(id);
-    if (source === undefined) {
-        throw new Error(`Could not find source with id ${id}`);
-    }
-
-    if (typeof source.setUrl !== "function") {
-        throw new Error(`Source "${id}" does not support setUrl.`);
-    }
-
-    source.setUrl(url);
-    recordSourceUrl(overlayFor(container), id, url);
 }
 
 /**
@@ -1181,6 +1192,39 @@ export function calculateAnchoredCameraOptions(container, options) {
 }
 
 /**
+ * Replaces the sampled easing curve sent from .NET (easingCurve) with an easing function for MapLibre.
+ * The curve is piecewise-linear between the samples, which is accurate to well below one frame of animation.
+ * @param {Object} options - Animation options that may contain easingCurve.
+ * @returns {Object} Options with an easing function instead of easingCurve.
+ */
+function withSampledEasing(options) {
+    if (!options || typeof options !== 'object' || !Array.isArray(options.easingCurve)) {
+        return options;
+    }
+
+    const { easingCurve, ...rest } = options;
+    const last = easingCurve.length - 1;
+    if (last < 1) {
+        return rest;
+    }
+
+    rest.easing = (t) => {
+        if (t <= 0) {
+            return easingCurve[0];
+        }
+
+        if (t >= 1) {
+            return easingCurve[last];
+        }
+
+        const position = t * last;
+        const index = Math.floor(position);
+        return easingCurve[index] + (easingCurve[index + 1] - easingCurve[index]) * (position - index);
+    };
+
+    return rest;
+}
+/**
  * Smoothly animates the map viewport to the specified location and zoom level.
  *
  * @param {string} container - The identifier of the map container.
@@ -1188,7 +1232,7 @@ export function calculateAnchoredCameraOptions(container, options) {
  * @param {Object} [eventData] - Optional additional metadata for the event triggered by the easing action.
  */
 export function easeTo(container, options, eventData) {
-    mapInstances[container].easeTo(options, eventData);
+    mapInstances[container].easeTo(withSampledEasing(options), eventData);
 }
 
 /**
@@ -1203,7 +1247,7 @@ export function fitBounds(container, bounds, options, eventData) {
     mapInstances[container].fitBounds([
         [bounds._sw.lng, bounds._sw.lat], // Southwest corner
         [bounds._ne.lng, bounds._ne.lat]  // Northeast corner
-    ], options, eventData);
+    ], withSampledEasing(options), eventData);
 }
 
 /**
@@ -1301,7 +1345,7 @@ async function resolveLoadedLayerFeatureBounds(map, layer) {
     }
 
     // Map may already be "loaded" (basemap ready) while a newly added vector
-    // source still has no tiles in cache — always wait once for idle/source data.
+    // source still has no tiles in cache вЂ” always wait once for idle/source data.
     await waitForSourceFeatures(map, layer.source);
     return querySourceFeatureBounds(map, layer);
 }
@@ -1453,7 +1497,7 @@ function extendCoordinateBounds(bounds, coordinates, geometryType) {
  * @param {Object} [eventData] - Optional event data to be dispatched with the fit operation.
  */
 export function fitScreenCoordinates(container, p0, p1, bearing, options, eventData) {
-    mapInstances[container].fitScreenCoordinates(p0, p1, bearing, options, eventData);
+    mapInstances[container].fitScreenCoordinates(p0, p1, bearing, withSampledEasing(options), eventData);
 }
 
 /**
@@ -1465,7 +1509,7 @@ export function fitScreenCoordinates(container, p0, p1, bearing, options, eventD
  * @param {Object} eventData - Optional additional event data associated with the flyTo action.
  */
 export function flyTo(container, options, eventData) {
-    mapInstances[container].flyTo(options, eventData);
+    mapInstances[container].flyTo(withSampledEasing(options), eventData);
 }
 
 /**
@@ -2190,7 +2234,7 @@ export function isZooming(container) {
  * @param {any} eventData - Optional event data.
  */
 export function jumpTo(container, options, eventData) {
-    mapInstances[container].jumpTo(options, eventData);
+    mapInstances[container].jumpTo(withSampledEasing(options), eventData);
 }
 
 /**
@@ -2280,7 +2324,7 @@ export function setLayerOrder(container, ids) {
  * @param {any} eventData - Optional event data.
  */
 export function panBy(container, offset, options, eventData) {
-    mapInstances[container].panBy(offset, options, eventData);
+    mapInstances[container].panBy(offset, withSampledEasing(options), eventData);
 }
 
 /**
@@ -2291,7 +2335,7 @@ export function panBy(container, offset, options, eventData) {
  * @param {any} eventData - Optional event data.
  */
 export function panTo(container, lngLat, options, eventData) {
-    mapInstances[container].panTo(lngLat, options, eventData);
+    mapInstances[container].panTo(lngLat, withSampledEasing(options), eventData);
 }
 
 /**
@@ -2331,7 +2375,8 @@ export function queryRenderedFeatures(container, query, options) {
         return [];
     }
 
-    return map.queryRenderedFeatures(query, resolved).map((feature) => toCompactFeature(feature));
+    const includeGeometry = options?.includeGeometry === true;
+    return map.queryRenderedFeatures(query, resolved).map((feature) => toCompactFeature(feature, includeGeometry));
 }
 
 export function queryRenderedFeaturesJson(container, query, options) {
@@ -2567,7 +2612,7 @@ export function removeSprite(container, id) {
  * @param {any} [eventData] - Additional event data.
  */
 export function resetNorth(container, options, eventData) {
-    mapInstances[container].resetNorth(options, eventData);
+    mapInstances[container].resetNorth(withSampledEasing(options), eventData);
 }
 
 /**
@@ -2577,7 +2622,7 @@ export function resetNorth(container, options, eventData) {
  * @param {any} [eventData] - Additional event data.
  */
 export function resetNorthPitch(container, options, eventData) {
-    mapInstances[container].resetNorthPitch(options, eventData);
+    mapInstances[container].resetNorthPitch(withSampledEasing(options), eventData);
 }
 
 /**
@@ -2598,7 +2643,7 @@ export function resize(container, eventData, constrainTransform = true) {
  * @param {any} [eventData] - Additional event data.
  */
 export function rotateTo(container, bearing, options, eventData) {
-    mapInstances[container].rotateTo(bearing, options, eventData);
+    mapInstances[container].rotateTo(bearing, withSampledEasing(options), eventData);
 }
 
 /**
@@ -2839,7 +2884,7 @@ export function setMissingStyleImageResolver(container, dotnetReference) {
 
 /**
  * Updates the requestManager's transform request with a .NET callback.
- * Prefer setJsTransformRequestPolicy for tile/glyph/sprite traffic — .NET
+ * Prefer setJsTransformRequestPolicy for tile/glyph/sprite traffic вЂ” .NET
  * callbacks on every resource request are a hot-path anti-pattern.
  * @param {string} container - The map container.
  * @param {Object|null} dotnetReference - .NET reference for the transform request callback, or null to clear.
@@ -2943,7 +2988,7 @@ export function setRenderWorldCopies(container, renderWorldCopies) {
  * @param {any} [eventData] - Additional event data.
  */
 export function snapToNorth(container, options, eventData) {
-    mapInstances[container].snapToNorth(options, eventData);
+    mapInstances[container].snapToNorth(withSampledEasing(options), eventData);
 }
 
 /**
@@ -2990,7 +3035,7 @@ export function updateImage(container, id, image) {
  * @param {any} [eventData] - Additional event data.
  */
 export function zoomIn(container, options, eventData) {
-    mapInstances[container].zoomIn(options, eventData);
+    mapInstances[container].zoomIn(withSampledEasing(options), eventData);
 }
 
 /**
@@ -3000,7 +3045,7 @@ export function zoomIn(container, options, eventData) {
  * @param {any} [eventData] - Additional event data.
  */
 export function zoomOut(container, options, eventData) {
-    mapInstances[container].zoomOut(options, eventData);
+    mapInstances[container].zoomOut(withSampledEasing(options), eventData);
 }
 
 /**
@@ -3011,7 +3056,7 @@ export function zoomOut(container, options, eventData) {
  * @param {any} [eventData] - Additional event data.
  */
 export function zoomTo(container, zoom, options, eventData) {
-    mapInstances[container].zoomTo(zoom, options, eventData);
+    mapInstances[container].zoomTo(zoom, withSampledEasing(options), eventData);
 }
 
 function resolveMarkerOptions(options) {
@@ -3134,6 +3179,24 @@ export function removePopup(popupId) {
     delete popupContainers[popupId];
 }
 
+/**
+ * Marker methods that invokeMarker forwards by name. Anything else is rejected, so a caller cannot
+ * reach lifecycle methods such as remove() through the generic path.
+ */
+const MARKER_METHODS = new Set([
+    'setDraggable', 'isDraggable', 'setRotation', 'getRotation',
+    'getRotationAlignment', 'getPitchAlignment', 'getOffset', 'setOpacity', 'setSubpixelPositioning',
+    'togglePopup', 'addClassName', 'removeClassName', 'toggleClassName'
+]);
+
+/**
+ * Popup methods that invokePopup forwards by name. Anything else is rejected.
+ */
+const POPUP_METHODS = new Set([
+    'setMaxWidth', 'getMaxWidth', 'setOffset', 'setSubpixelPositioning', 'isOpen', 'trackPointer',
+    'addClassName', 'removeClassName', 'toggleClassName'
+]);
+
 export function invokeMarker(markerId, method, args) {
     const marker = getMarker(markerId);
     if (!marker) {
@@ -3195,7 +3258,13 @@ export function invokeMarker(markerId, method, args) {
         case 'setRotationAlignment':
             marker.setRotationAlignment(payload[0] ?? undefined);
             return null;
+        case 'getElement':
+            return marker.getElement();
         default: {
+            if (!MARKER_METHODS.has(method)) {
+                throw new Error(`Marker method '${method}' is not supported.`);
+            }
+
             const result = marker[method](...(payload.length ? payload : []));
             return result ?? null;
         }
@@ -3253,7 +3322,16 @@ export function invokePopup(popupId, method, args) {
             popupContainers[popupId] = container;
             return null;
         }
+        case 'setDOMContent':
+            popup.setDOMContent(payload[0]);
+            return null;
+        case 'getElement':
+            return popup.getElement();
         default: {
+            if (!POPUP_METHODS.has(method)) {
+                throw new Error(`Popup method '${method}' is not supported.`);
+            }
+
             const result = popup[method](...(payload.length ? payload : []));
             return result ?? null;
         }
@@ -3368,7 +3446,9 @@ export async function executeTransaction(container, data) {
     // The C# side already coalesces the batch (BulkTransactionCoalescer.Coalesce),
     // so no second pass is needed here.
     const transactions = Array.isArray(data) ? data : [];
-    for (const d of transactions) {
+    const failures = [];
+    for (const [index, d] of transactions.entries()) {
+      try {
         switch (d.event) {
             case "addControl":
                 addControl(container, d.data[0], d.data[1], d.data[2]);
@@ -3422,14 +3502,10 @@ export async function executeTransaction(container, data) {
                 await setSourceDataAsJson(container, d.data[0], d.data[1]);
                 break;
             case "setSourceTiles":
-            case "setVectorSourceTiles":
                 setSourceTiles(container, d.data[0], d.data[1]);
                 break;
             case "upsertTileSource":
                 upsertTileSource(container, d.data[0], d.data[1]);
-                break;
-            case "setSourceUrl":
-                setSourceUrl(container, d.data[0], d.data[1]);
                 break;
             case "ensureImages":
                 await ensureImages(container, d.data[0]);
@@ -3492,9 +3568,17 @@ export async function executeTransaction(container, data) {
                 removeSourcesIfExist(container, d.data[0]);
                 break;
             default:
-                console.warn(`Unknown transaction event: ${d.event}`);
                 throw new Error(`Unknown transaction event: ${d.event}`);
         }
+      } catch (error) {
+        // Keep applying the remaining operations; report every failure once the batch is done.
+        failures.push({ index, event: d.event, error });
+      }
+    }
+    if (failures.length > 0) {
+        failures.forEach((f) => console.error(`Map transaction operation #${f.index} (${f.event}) failed:`, f.error));
+        const summary = failures.map((f) => `#${f.index} ${f.event}: ${f.error?.message ?? f.error}`).join('; ');
+        throw new Error(`Map transaction: ${failures.length} of ${transactions.length} operation(s) failed. ${summary}`);
     }
 }
 

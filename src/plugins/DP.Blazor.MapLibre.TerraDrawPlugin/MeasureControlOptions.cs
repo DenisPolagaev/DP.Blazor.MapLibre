@@ -7,81 +7,62 @@ namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 /// Options for <see cref="TerraDrawPlugin.AddMeasureControlAsync"/>.
 /// Mirrors <c>MeasureControlOptions</c> from maplibre-gl-terradraw.
 /// </summary>
-public sealed class MeasureControlOptions
+public sealed class MeasureControlOptions : TerraDrawControlOptionsBase
 {
-    [JsonPropertyName("modes")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IList<string>? Modes { get; set; }
-
-    [JsonPropertyName("open")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? Open { get; set; }
-
-    [JsonPropertyName("showDeleteConfirmation")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowDeleteConfirmation { get; set; }
-
-    [JsonPropertyName("modeOptions")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerraDrawModeOptions? ModeOptions { get; set; }
-
-    [JsonPropertyName("adapterOptions")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerraDrawAdapterOptions? AdapterOptions { get; set; }
-
     [JsonPropertyName("undoRedo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerraDrawUndoRedoOptions? UndoRedo { get; set; }
+    public TerraDrawUndoRedoOptions? UndoRedo { get; init; }
 
     [JsonPropertyName("pointLayerLabelSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? PointLayerLabelSpec { get; set; }
+    public JsonElement? PointLayerLabelSpec { get; init; }
 
     [JsonPropertyName("lineLayerLabelSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? LineLayerLabelSpec { get; set; }
+    public JsonElement? LineLayerLabelSpec { get; init; }
 
     [JsonPropertyName("routingLineLayerNodeSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? RoutingLineLayerNodeSpec { get; set; }
+    public JsonElement? RoutingLineLayerNodeSpec { get; init; }
 
     [JsonPropertyName("polygonLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? PolygonLayerSpec { get; set; }
+    public JsonElement? PolygonLayerSpec { get; init; }
 
+    /// <summary>Unit system: <c>metric</c> or <c>imperial</c> (see <see cref="TerraDrawMeasureUnit"/>).</summary>
     [JsonPropertyName("measureUnitType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? MeasureUnitType { get; set; }
+    public string? MeasureUnitType { get; init; }
 
     [JsonPropertyName("distancePrecision")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? DistancePrecision { get; set; }
+    public int? DistancePrecision { get; init; }
 
     [JsonPropertyName("distanceUnit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? DistanceUnit { get; set; }
+    public string? DistanceUnit { get; init; }
 
     [JsonPropertyName("areaPrecision")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? AreaPrecision { get; set; }
+    public int? AreaPrecision { get; init; }
 
     [JsonPropertyName("areaUnit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? AreaUnit { get; set; }
+    public string? AreaUnit { get; init; }
 
     [JsonPropertyName("measureUnitSymbols")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? MeasureUnitSymbols { get; set; }
+    public Dictionary<string, string>? MeasureUnitSymbols { get; init; }
 
     [JsonPropertyName("computeElevation")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ComputeElevation { get; set; }
+    public bool? ComputeElevation { get; init; }
 
     [JsonPropertyName("terrainSource")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerrainSource? TerrainSource { get; set; }
+    public TerrainSource? TerrainSource { get; init; }
 
     [JsonPropertyName("elevationCacheConfig")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ElevationCacheConfig? ElevationCacheConfig { get; set; }
+    public ElevationCacheConfig? ElevationCacheConfig { get; init; }
 }

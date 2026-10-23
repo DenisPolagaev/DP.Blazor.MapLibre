@@ -2,7 +2,7 @@
 
 **PMTiles** protocol plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre), registering the `pmtiles://` protocol on MapLibre GL JS using [protomaps/PMTiles](https://github.com/protomaps/PMTiles).
 
-Once registered, any source whose URL starts with `pmtiles://` (for example `pmtiles://https://host/archive.pmtiles`) is served over HTTP Range requests. The protocol is process-global — one successful initialization covers every map on the page.
+Once registered, any source whose URL starts with `pmtiles://` (for example `pmtiles://https://host/archive.pmtiles`) is served over HTTP Range requests.
 
 ## Install
 
@@ -39,6 +39,23 @@ Register the plugin **before** adding sources with `pmtiles://` URLs:
 }
 ```
 
+## Shared protocol and lifetime
+
+The `pmtiles` protocol is registered on `maplibregl` for the whole page, not per map:
+
+- Registration is memoized: several plugin instances (or several maps) initializing at the same time register the protocol once.
+- The plugin keeps a reference count of the instances that initialized successfully. Disposing an instance releases its reference.
+- The protocol is removed with `maplibregl.removeProtocol('pmtiles')` only when the last reference is released. While another initialized instance is alive, `pmtiles://` sources on other maps keep working.
+- Once the protocol is removed, a new initialization registers it again.
+
+Keep at least one `PmtilesPlugin` instance alive for as long as any map on the page uses `pmtiles://` sources.
+
+## Error handling
+
+Tile requests return an empty tile only when the archive answers HTTP `404` or `204` (no tile at that position). Every other failure is rethrown, so MapLibre emits an `error` event instead of showing blank tiles. This covers HTTP 5xx responses, network failures, invalid archives, TileJSON failures and aborted requests.
+
+Limitation: the vendored PMTiles library does not separate an archive that is missing (HTTP 404 on the header) from a missing tile, so a `404` for the archive also produces empty tiles. Check the archive URL when a source renders blank.
+
 ## Documentation
 
 - [Documentation site](https://denispolagaev.github.io/DP.Blazor.MapLibre/)
@@ -46,4 +63,6 @@ Register the plugin **before** adding sources with `pmtiles://` URLs:
 
 ## License
 
-Targets .NET 8, 9, 10 and 11. Released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+Targets .NET 8, 9, 10 and 11. The plugin code is released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+
+The vendored `wwwroot/pmtiles/pmtiles.mjs` is third-party code under the BSD-3-Clause license (Protomaps LLC). See [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

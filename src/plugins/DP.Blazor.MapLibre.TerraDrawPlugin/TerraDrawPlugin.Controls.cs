@@ -1,5 +1,4 @@
 using DP.Blazor.MapLibre.Models.Control;
-using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 
@@ -26,22 +25,35 @@ public sealed partial class TerraDrawPlugin
         await AddControlInternalAsync(TerraDrawControlType.Valhalla, options, position, controlId);
 
     public async ValueTask SetActiveControlAsync(string controlId) =>
-        await _pluginJsModule.InvokeVoidAsync("setActiveControl", controlId);
+        await CallVoidAsync("setActiveControl", controlId);
 
     public async ValueTask<string?> GetActiveControlIdAsync() =>
-        await _pluginJsModule.InvokeAsync<string?>("getActiveControlId");
+        await CallAsync<string?>("getActiveControlId");
 
     public async ValueTask<string[]> GetControlIdsAsync() =>
-        await _pluginJsModule.InvokeAsync<string[]>("getControlIds");
+        await CallAsync<string[]>("getControlIds");
 
     public async ValueTask<string> GetControlTypeAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeAsync<string>("getControlType", controlId);
+        await CallAsync<string>("getControlType", controlId);
 
     public async ValueTask RemoveControlAsync(string? controlId = null)
     {
         EnsureInitialized();
-        await _pluginJsModule.InvokeVoidAsync("removeControl", controlId);
-        var remaining = await _pluginJsModule.InvokeAsync<string[]>("getControlIds");
+        var id = controlId ?? await CallAsync<string?>("getActiveControlId");
+        try
+        {
+            // JavaScript removes the control's listeners first; the .NET references follow in finally.
+            await CallVoidAsync("removeControl", id);
+        }
+        finally
+        {
+            if (id is not null)
+            {
+                ReleaseListeners(registration => registration.ControlId == id);
+            }
+        }
+
+        var remaining = await CallAsync<string[]>("getControlIds");
         if (remaining.Length == 0)
         {
             MarkDetached();
@@ -51,39 +63,47 @@ public sealed partial class TerraDrawPlugin
     public async ValueTask RemoveAllControlsAsync()
     {
         EnsureInitialized();
-        await _pluginJsModule.InvokeVoidAsync("removeAllControls");
+        try
+        {
+            await CallVoidAsync("removeAllControls");
+        }
+        finally
+        {
+            ReleaseListeners(_ => true);
+        }
+
         MarkDetached();
     }
 
     public async ValueTask ActivateControlAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("activateControl", controlId);
+        await CallVoidAsync("activateControl", controlId);
 
     public async ValueTask DeactivateControlAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("deactivateControl", controlId);
+        await CallVoidAsync("deactivateControl", controlId);
 
     public async ValueTask SetControlExpandedAsync(bool expanded, string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("setControlExpanded", expanded, controlId);
+        await CallVoidAsync("setControlExpanded", expanded, controlId);
 
     public async ValueTask<bool> GetControlExpandedAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeAsync<bool>("getControlExpanded", controlId);
+        await CallAsync<bool>("getControlExpanded", controlId);
 
     public async ValueTask SetShowDeleteConfirmationAsync(bool value, string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("setShowDeleteConfirmation", value, controlId);
+        await CallVoidAsync("setShowDeleteConfirmation", value, controlId);
 
     public async ValueTask<bool> GetShowDeleteConfirmationAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeAsync<bool>("getShowDeleteConfirmation", controlId);
+        await CallAsync<bool>("getShowDeleteConfirmation", controlId);
 
     public async ValueTask ResetActiveModeAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("resetActiveMode", controlId);
+        await CallVoidAsync("resetActiveMode", controlId);
 
     public async ValueTask RecalcAsync(string? controlId = null) =>
-        await _pluginJsModule.InvokeVoidAsync("recalc", controlId);
+        await CallVoidAsync("recalc", controlId);
 
     public async ValueTask<string> CleanControlStyleAsync(
         string styleJson,
         CleanStyleOptions? options = null,
         string? controlId = null) =>
-        await _pluginJsModule.InvokeAsync<string>("cleanControlStyle", styleJson, options, controlId);
+        await CallAsync<string>("cleanControlStyle", styleJson, options, controlId);
 
     #endregion
 
@@ -96,12 +116,15 @@ public sealed partial class TerraDrawPlugin
         string? controlId)
     {
         EnsureInitialized();
-        var id = await _pluginJsModule.InvokeAsync<string>(
+        var id = await CallAsync<string>(
             "addControl",
             controlType.ToControlName(),
             options,
             TerraDrawInteropExtensions.ToControlPosition(position),
             controlId);
+
+        // addControl replaces a control with the same id, which removes that control's JavaScript listeners.
+        ReleaseListeners(registration => registration.ControlId == id);
         MarkAttached();
         return id;
     }

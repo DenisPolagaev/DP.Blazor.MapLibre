@@ -27,7 +27,6 @@ export declare function createOverlayStore(): OverlayStore;
 export declare function recordSource(store: OverlayStore, id: string, spec: unknown): void;
 export declare function recordSourceData(store: OverlayStore, id: string, data: unknown): void;
 export declare function recordSourceTiles(store: OverlayStore, id: string, tiles: unknown): void;
-export declare function recordSourceUrl(store: OverlayStore, id: string, url: string): void;
 export declare function forgetSource(store: OverlayStore, id: string): void;
 export declare function recordLayer(store: OverlayStore, spec: Record<string, unknown>, beforeId?: string | null): void;
 export declare function forgetLayer(store: OverlayStore, id: string): void;

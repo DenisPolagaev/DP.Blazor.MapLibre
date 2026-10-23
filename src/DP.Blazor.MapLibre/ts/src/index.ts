@@ -23,7 +23,6 @@ export {
     recordSource,
     recordSourceData,
     recordSourceTiles,
-    recordSourceUrl,
     replayOverlay,
     snapshotOverlay,
 } from './runtime-overlay.js';

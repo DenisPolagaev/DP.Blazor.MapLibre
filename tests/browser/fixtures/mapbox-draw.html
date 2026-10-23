@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mapbox Draw reference plugin harness</title>
+  <link rel="stylesheet" href="/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" />
+  <style>
+    html, body, #map { margin: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script type="module">
+    import * as maplibregl from '/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs';
+
+    globalThis.maplibregl = { ...maplibregl };
+
+    try {
+      const core = await import('/_content/DP.Blazor.MapLibre/MapLibre.razor.js');
+      await core.prepareMapLibreGl();
+
+      const stub = {
+        invokeMethod: () => 'null',
+        invokeMethodAsync: async () => undefined,
+      };
+
+      globalThis.__map = await core.initializeMap({
+        container: 'map',
+        style: { version: 8, sources: {}, layers: [] },
+        center: [0, 0],
+        zoom: 1,
+        attributionControl: false,
+        renderWorldCopies: false,
+      }, stub, null);
+
+      globalThis.__plugin = await import('/_content/MapboxGlDrawPlugin/MapboxGlDrawPlugin.js');
+      globalThis.__ready = true;
+    } catch (error) {
+      globalThis.__error = String((error && (error.stack || error)) || error);
+    }
+  </script>
+</body>
+</html>

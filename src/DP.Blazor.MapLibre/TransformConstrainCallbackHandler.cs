@@ -16,7 +16,8 @@ internal sealed class TransformConstrainCallbackHandler(Func<TransformConstrainS
     {
         var input = JsonSerializer.Deserialize<TransformConstrainState>(transformJson, Serializer)
                     ?? new TransformConstrainState();
-        var output = handler(input);
-        return JsonSerializer.Serialize(output, Serializer);
+        // A handler that returns nothing keeps the camera state MapLibre proposed.
+        TransformConstrainState? output = handler(input);
+        return JsonSerializer.Serialize(output ?? input, Serializer);
     }
 }

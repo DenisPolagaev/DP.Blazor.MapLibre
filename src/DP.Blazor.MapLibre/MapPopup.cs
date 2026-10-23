@@ -1,6 +1,7 @@
 using DP.Blazor.MapLibre.Models;
 using DP.Blazor.MapLibre.Models.Event;
 using DP.Blazor.MapLibre.Models.Padding;
+using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre;
 
@@ -33,6 +34,21 @@ public sealed class MapPopup
         _map.InvokePopupVoidAsync(Id, "setLngLatAndHTML", position, html);
 
     public ValueTask SetTextAsync(string text) => _map.InvokePopupVoidAsync(Id, "setText", text);
+
+    /// <summary>
+    /// Sets the popup content to a DOM element created with JavaScript interop (MapLibre <c>setDOMContent</c>).
+    /// </summary>
+    public ValueTask SetDomContentAsync(IJSObjectReference element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return _map.InvokePopupVoidAsync(Id, "setDOMContent", element);
+    }
+
+    /// <summary>
+    /// Returns the popup's DOM element.
+    /// </summary>
+    public ValueTask<IJSObjectReference?> GetElementAsync() =>
+        _map.InvokePopupAsync<IJSObjectReference?>(Id, "getElement");
 
     public ValueTask SetMaxWidthAsync(string maxWidth) => _map.InvokePopupVoidAsync(Id, "setMaxWidth", maxWidth);
 

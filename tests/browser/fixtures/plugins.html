@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MapLibre plugin harness</title>
+  <link rel="stylesheet" href="/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" />
+  <style>
+    html, body { margin: 0; }
+    #cmp { position: relative; width: 800px; height: 600px; }
+    #map, #map2 { position: absolute; inset: 0; }
+  </style>
+</head>
+<body>
+  <div id="cmp">
+    <div id="map"></div>
+    <div id="map2"></div>
+  </div>
+  <script type="module">
+    // Exercises the plugin modules a Blazor host loads, against the real MapLibre bundle.
+    import * as maplibregl from '/_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs';
+
+    globalThis.maplibregl = { ...maplibregl };
+
+    try {
+      const core = await import('/_content/DP.Blazor.MapLibre/MapLibre.razor.js');
+      await core.prepareMapLibreGl();
+
+      globalThis.__core = core;
+      globalThis.__plugins = {
+        compare: await import('/_content/MapComparePlugin/ComparePlugin.js'),
+        framerate: await import('/_content/FrameratePlugin/FrameratePlugin.js'),
+        geogrid: await import('/_content/GeoGridPlugin/GeoGridPlugin.js'),
+        minimap: await import('/_content/MinimapPlugin/MinimapPlugin.js'),
+        pmtiles: await import('/_content/PmtilesPlugin/PmtilesPlugin.js'),
+        starfield: await import('/_content/StarfieldPlugin/StarfieldPlugin.js'),
+        terradraw: await import('/_content/TerraDrawPlugin/TerraDrawPlugin.js'),
+      };
+
+      const stub = {
+        invokeMethod: () => 'null',
+        invokeMethodAsync: async () => undefined,
+      };
+
+      const baseOptions = {
+        style: { version: 8, sources: {}, layers: [] },
+        center: [0, 0],
+        zoom: 1,
+        attributionControl: false,
+        renderWorldCopies: false,
+      };
+
+      globalThis.__map = await core.initializeMap({ ...baseOptions, container: 'map' }, stub, null);
+      globalThis.__map2 = await core.initializeMap({ ...baseOptions, container: 'map2' }, stub, null);
+
+      await Promise.all([
+        globalThis.__map.isStyleLoaded() ? null : globalThis.__map.once('style.load'),
+        globalThis.__map2.isStyleLoaded() ? null : globalThis.__map2.once('style.load'),
+      ]);
+
+      globalThis.__ready = true;
+    } catch (error) {
+      globalThis.__error = String((error && (error.stack || error)) || error);
+    }
+  </script>
+</body>
+</html>

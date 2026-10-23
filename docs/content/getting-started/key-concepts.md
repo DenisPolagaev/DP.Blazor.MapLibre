@@ -24,7 +24,7 @@ The main entry point is the `MapLibre` component:
 
 ## Default map style
 
-`MapOptions.Style` defaults to `MapStyles.OpenStreetMap` (OSM raster tiles). Override it when you need vector styles or custom tile servers.
+`MapOptions.Style` defaults to `MapStyle.OpenStreetMap.Standard.ToStylePayload()` (OSM raster tiles). Override it when you need vector styles or custom tile servers.
 
 See [Map API methods](../api/map/methods.md) for wrappers such as terrain, GeoJSON diff, time control, and custom layers.
 

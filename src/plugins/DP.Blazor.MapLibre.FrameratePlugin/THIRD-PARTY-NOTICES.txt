@@ -1,0 +1,28 @@
+THIRD-PARTY NOTICES - DP.Blazor.MapLibre.FrameratePlugin
+=========================================================
+
+This plugin contains code adapted from the following third-party project.
+The remaining files of the plugin (C# sources, FrameratePlugin.js, FrameratePlugin.css, README.md)
+are original work of this plugin.
+
+1. mapbox-gl-framerate
+   Files:      wwwroot/maplibregl-framerate-control.js
+   Upstream:   https://github.com/mapbox/mapbox-gl-framerate
+   Version:    unknown (the upstream version was not recorded when the code was adapted)
+   Changes:    adapted for MapLibre GL JS; the control is no longer published on the global
+               maplibregl object; the moveend-without-movestart and zero-interval cases are guarded.
+   License:    ISC
+
+   Copyright (c) 2019, Mapbox
+
+   Permission to use, copy, modify, and/or distribute this software for any
+   purpose with or without fee is hereby granted, provided that the above
+   copyright notice and this permission notice appear in all copies.
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

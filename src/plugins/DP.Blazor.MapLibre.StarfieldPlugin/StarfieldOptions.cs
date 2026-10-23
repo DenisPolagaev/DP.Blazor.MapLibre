@@ -27,6 +27,14 @@ public sealed record StarfieldOptions
     public double? GlowExtent { get; init; }
 
     /// <summary>
+    /// Inner white corona ring as a multiple of the globe radius (default ~1.02).
+    /// Values below 1.005 are clamped by the script.
+    /// </summary>
+    [JsonPropertyName("coronaExtent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? CoronaExtent { get; init; }
+
+    /// <summary>
     /// Optional DOM id for an existing starfield container.
     /// When omitted with <see cref="GlowContainerId"/>, the plugin creates layers behind the map.
     /// </summary>

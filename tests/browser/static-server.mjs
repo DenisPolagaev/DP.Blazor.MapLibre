@@ -10,12 +10,19 @@ const port = Number(process.env.PORT || 4173);
 // Serve the real RCL wwwroot trees under their Blazor static web asset paths so the
 // browser specs exercise the same URLs a Blazor host would use. Component-scoped JS
 // (MapLibre.razor.js) lives at the project root and is served under _content too.
+const pluginRoot = path.join(__dirname, '..', '..', 'src', 'plugins');
+
 const assetMounts = [
   ['/_content/DP.Blazor.MapLibre/', [
     path.join(__dirname, '..', '..', 'src', 'DP.Blazor.MapLibre', 'wwwroot'),
     path.join(__dirname, '..', '..', 'src', 'DP.Blazor.MapLibre'),
   ]],
-  ['/_content/ProjPlugin/', [path.join(__dirname, '..', '..', 'src', 'plugins', 'DP.Blazor.MapLibre.ProjPlugin', 'wwwroot')]],
+  ...['ComparePlugin', 'FrameratePlugin', 'GeoGridPlugin', 'MinimapPlugin', 'PmtilesPlugin', 'ProjPlugin', 'StarfieldPlugin', 'TerraDrawPlugin']
+    .map((name) => [`/_content/${name}/`, [path.join(pluginRoot, `DP.Blazor.MapLibre.${name}`, 'wwwroot')]]),
+  // Reference plugin from the examples solution.
+  ['/_content/MapboxGlDrawPlugin/', [path.join(__dirname, '..', '..', 'examples', 'DP.Blazor.MapLibre.Examples.MapboxGlPlugin', 'wwwroot')]],
+  // ComparePlugin ships under its own static web asset base path.
+  ['/_content/MapComparePlugin/', [path.join(pluginRoot, 'DP.Blazor.MapLibre.ComparePlugin', 'wwwroot')]],
 ];
 
 const mime = {

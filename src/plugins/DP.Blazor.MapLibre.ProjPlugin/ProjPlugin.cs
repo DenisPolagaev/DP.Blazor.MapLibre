@@ -6,75 +6,108 @@ using Microsoft.JSInterop;
 namespace DP.Blazor.MapLibre.ProjPlugin;
 
 /// <summary>
-/// MapLibre plugin that renders a map in any coordinate reference system by wrapping
-/// <see href="https://www.npmjs.com/package/maplibre-proj">maplibre-proj</see> (backed by
-/// <see href="https://www.npmjs.com/package/backproj">backproj</see>, PROJ 9 via
-/// <c>proj-wasm</c> and JTS via <c>@wcohen/wasmts</c>).
+/// MapLibre plugin that renders a map in an arbitrary coordinate reference system (CRS). Reprojection runs on the
+/// browser main thread with the vendored <c>proj-wasm</c> (PROJ 9) and <c>@wcohen/wasmts</c> (JTS) runtime. The
+/// plugin does not use <c>maplibre-proj</c> or <c>backproj</c>.
 /// </summary>
 /// <remarks>
-/// The map must be created with <see cref="MapOptions.RenderWorldCopies"/> set to <c>false</c>;
-/// <c>reprojectStyle</c> forces <c>projection: mercator</c> and the fake coordinate space does not tile.
-/// Handler methods require <see cref="MapLibre.RegisterPlugin"/> to have completed.
+/// <para>
+/// <b>Requirements.</b> Create the map with <see cref="MapOptions.RenderWorldCopies"/> set to <c>false</c>: the
+/// reprojected style uses a fake Mercator coordinate space that does not tile. Register the plugin with
+/// <see cref="MapLibre.RegisterPlugin"/> before calling any member; members throw otherwise.
+/// </para>
+/// <para>
+/// <b>Detach and dispose.</b> <c>DetachAsync</c> releases the protocol handlers and transformers that this
+/// plugin created for the map. It does <b>not</b> restore the original style, camera or bounds. The reprojected style
+/// stays on the map, and its reprojected vector sources stop loading until the host sets a style again (for example
+/// with <c>MapLibre.SetStyle</c>). Detach has an effect only after an apply or <see cref="ReprojectSourceAsync"/>
+/// call has attached the plugin. Dispose releases the same resources regardless of attachment.
+/// </para>
+/// <para>
+/// <b>Limitations.</b> Only the first tile URL template of a vector source is used; a warning is logged when a source
+/// has more. Raster sources and layers are dropped. At most <see cref="ProjReprojectOptions.MaxInputTiles"/> input
+/// tiles are read per output tile; beyond that the output tile is incomplete and a warning is logged. Re-running
+/// <see cref="ApplyCurrentStyleProjectionAsync"/> on a style that this plugin already reprojected is not supported.
+/// </para>
+/// <para>
+/// <b>Import map.</b> The vendored modules are resolved through an import map. Browsers read import maps only before
+/// the first module loads. Declare the entries from <see cref="GetImportMapAsync"/> in a static
+/// <c>&lt;script type="importmap"&gt;</c> before the Blazor framework script. Without them the plugin adds the
+/// entries at runtime and logs a warning when the browser does not honour them.
+/// </para>
 /// </remarks>
-public sealed class ProjPlugin : MapLibrePluginBase
+public sealed class ProjPlugin : MapLibreJsPlugin
 {
     #region Fields
 
-    private IJSObjectReference _mapObject = null!;
-    private IJSObjectReference _pluginJsModule = null!;
-    private bool _tileWorkersShutdown;
+    private IJSObjectReference? _map;
+    private bool _projectionResourcesReleased;
 
     #endregion
 
-    #region Lifecycle Overrides
+    #region Module
 
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
+    /// <inheritdoc />
+    protected override string ModulePath => "./_content/ProjPlugin/ProjPlugin.js";
+
+    /// <summary>
+    /// Stores the map reference. Every JavaScript call passes it so that the module keeps its state per map.
+    /// </summary>
+    /// <inheritdoc />
+    protected override ValueTask OnModuleLoadedAsync(IJSObjectReference map, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(map);
-        _mapObject = map;
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/ProjPlugin/ProjPlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken, _mapObject);
+        _map = map;
+        return base.OnModuleLoadedAsync(map, cancellationToken);
     }
 
-    protected override ValueTask OnDetachAsync(CancellationToken cancellationToken) =>
-        ValueTask.CompletedTask;
-
-    protected override async ValueTask OnDisposeAsync()
+    /// <summary>
+    /// Releases the protocol handlers and transformers of this map. The reprojected style is not restored.
+    /// See the remarks of <see cref="ProjPlugin"/>.
+    /// </summary>
+    /// <inheritdoc />
+    protected override async ValueTask OnDetachModuleAsync(CancellationToken cancellationToken)
     {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
+        if (_map is null)
         {
-            _mapObject = null!;
+            return;
+        }
+
+        await Module.InvokeVoidAsync("detach", cancellationToken, _map);
+    }
+
+    /// <summary>Releases the protocol handlers and transformers of this map before the module is disposed.</summary>
+    /// <inheritdoc />
+    protected override async ValueTask OnModuleDisposingAsync()
+    {
+        if (_map is null)
+        {
             return;
         }
 
         try
         {
-            await pluginModule.InvokeVoidAsync("dispose");
-            await pluginModule.DisposeAsync();
+            await Module.InvokeVoidAsync("dispose", _map);
         }
         finally
         {
-            _pluginJsModule = null!;
-            _mapObject = null!;
+            _map = null;
         }
     }
+
+    private IJSObjectReference MapReference =>
+        _map ?? throw new InvalidOperationException(
+            $"{nameof(ProjPlugin)} has no map reference. Call MapLibre.RegisterPlugin before using the plugin.");
 
     #endregion
 
     #region Projection
 
     /// <summary>
-    /// Reprojects a style into <see cref="ProjReprojectOptions.Crs"/> and returns the rewritten
-    /// style, fake bounds and transformer id. The map is not modified; call
-    /// <see cref="ApplyReprojectionAsync"/> to apply the result, or use
-    /// <c>MapLibre.SetStyle</c> with <see cref="ProjReprojectResult.Style"/> yourself.
+    /// Reprojects a style and returns the rewritten style, fake bounds and transformer id. The map is not modified.
+    /// Vector protocol handlers created here stay registered for the map until the next apply on this map, a detach,
+    /// or dispose. Call <see cref="ApplyReprojectionAsync"/>, or pass <see cref="ProjReprojectResult.Style"/> to
+    /// <c>MapLibre.SetStyle</c> yourself.
     /// </summary>
     public async Task<ProjReprojectResult> ReprojectStyleAsync(
         ProjReprojectOptions options,
@@ -82,15 +115,17 @@ public sealed class ProjPlugin : MapLibrePluginBase
     {
         EnsureInitialized();
         ArgumentNullException.ThrowIfNull(options);
-        return await _pluginJsModule.InvokeAsync<ProjReprojectResult>(
+        return await Module.InvokeAsync<ProjReprojectResult>(
             "reprojectStyle",
             cancellationToken,
-            options);
+            options,
+            MapReference);
     }
 
     /// <summary>
-    /// Reprojects a style and applies it to the map: <c>setStyle</c>, optional
-    /// <c>setMaxBounds</c> and <c>fitBounds</c> with the fake bounds.
+    /// Reprojects a style and applies it to the map: <c>setStyle</c>, then <c>fitBounds</c> with the fake bounds
+    /// unless <see cref="ProjReprojectOptions.FitBounds"/> is <c>false</c>. The protocol handlers of the previously
+    /// applied style are released. Attaches the plugin, so <c>DetachAsync</c> has an effect afterwards.
     /// </summary>
     public async Task<ProjReprojectResult> ApplyReprojectionAsync(
         ProjReprojectOptions options,
@@ -98,17 +133,21 @@ public sealed class ProjPlugin : MapLibrePluginBase
     {
         EnsureInitialized();
         ArgumentNullException.ThrowIfNull(options);
-        _tileWorkersShutdown = false;
-        return await _pluginJsModule.InvokeAsync<ProjReprojectResult>(
+        _projectionResourcesReleased = false;
+        var result = await Module.InvokeAsync<ProjReprojectResult>(
             "applyReprojection",
             cancellationToken,
-            options);
+            options,
+            MapReference);
+        MarkAttached();
+        return result;
     }
 
     /// <summary>
-    /// Reprojects the map's <b>current</b> style in place. Vector sources declared via
-    /// TileJSON (<c>url</c>) are expanded to explicit <c>tiles</c>, and raster sources/layers
-    /// are dropped (maplibre-proj cannot reproject them).
+    /// Reprojects the map's <b>current</b> style and sets the result on the map. Vector sources declared via TileJSON
+    /// (<c>url</c>) are expanded to explicit <c>tiles</c>. Raster sources and layers are dropped, because the pipeline
+    /// reprojects vector and GeoJSON sources only. The current style must not already be reprojected by this plugin.
+    /// Attaches the plugin.
     /// </summary>
     public async Task<ProjReprojectResult> ApplyCurrentStyleProjectionAsync(
         ProjMapProjectionOptions options,
@@ -116,16 +155,21 @@ public sealed class ProjPlugin : MapLibrePluginBase
     {
         EnsureInitialized();
         ArgumentNullException.ThrowIfNull(options);
-        _tileWorkersShutdown = false;
-        return await _pluginJsModule.InvokeAsync<ProjReprojectResult>(
+        _projectionResourcesReleased = false;
+        var result = await Module.InvokeAsync<ProjReprojectResult>(
             "reprojectCurrentStyle",
             cancellationToken,
-            options);
+            options,
+            MapReference);
+        MarkAttached();
+        return result;
     }
 
     /// <summary>
-    /// Reprojects a single source (vector tile or GeoJSON) and returns the rewritten source.
-    /// Used for data layers added after the basemap style was reprojected.
+    /// Reprojects a single source (vector tile or GeoJSON) and returns the rewritten source. Used for data layers added
+    /// after the basemap style was reprojected. Repeating a call with the same
+    /// <see cref="ProjSourceReprojectOptions.SourceId"/> replaces the earlier protocol handler of that source. Attaches
+    /// the plugin.
     /// </summary>
     public async Task<ProjSourceReprojectResult> ReprojectSourceAsync(
         ProjSourceReprojectOptions options,
@@ -133,11 +177,14 @@ public sealed class ProjPlugin : MapLibrePluginBase
     {
         EnsureInitialized();
         ArgumentNullException.ThrowIfNull(options);
-        _tileWorkersShutdown = false;
-        return await _pluginJsModule.InvokeAsync<ProjSourceReprojectResult>(
+        _projectionResourcesReleased = false;
+        var result = await Module.InvokeAsync<ProjSourceReprojectResult>(
             "reprojectSource",
             cancellationToken,
-            options);
+            options,
+            MapReference);
+        MarkAttached();
+        return result;
     }
 
     #endregion
@@ -158,7 +205,7 @@ public sealed class ProjPlugin : MapLibrePluginBase
         ArgumentException.ThrowIfNullOrWhiteSpace(transformerId);
 
         var payload = coordinates as IReadOnlyCollection<LngLat> ?? coordinates.ToList();
-        var result = await _pluginJsModule.InvokeAsync<List<LngLat>>(
+        var result = await Module.InvokeAsync<List<LngLat>>(
             "inverseTransformCoords",
             cancellationToken,
             payload,
@@ -179,7 +226,7 @@ public sealed class ProjPlugin : MapLibrePluginBase
         ArgumentNullException.ThrowIfNull(coordinate);
         ArgumentException.ThrowIfNullOrWhiteSpace(transformerId);
 
-        return await _pluginJsModule.InvokeAsync<LngLat>(
+        return await Module.InvokeAsync<LngLat>(
             "transformPoint",
             cancellationToken,
             coordinate,
@@ -193,7 +240,7 @@ public sealed class ProjPlugin : MapLibrePluginBase
     {
         EnsureInitialized();
         ArgumentException.ThrowIfNullOrWhiteSpace(transformerId);
-        await _pluginJsModule.InvokeVoidAsync("releaseTransformer", cancellationToken, transformerId);
+        await Module.InvokeVoidAsync("releaseTransformer", cancellationToken, transformerId);
     }
 
     #endregion
@@ -201,35 +248,37 @@ public sealed class ProjPlugin : MapLibrePluginBase
     #region Diagnostics
 
     /// <summary>
-    /// Terminates the shared reprojection worker pool. Transformers returned earlier become
-    /// invalid; the next reprojection recreates the pool.
+    /// Clears the process-wide projection cache and releases the transformers created for this map. There are no worker threads: the pipeline runs on the main thread. Transformer ids
+    /// returned earlier for this map become invalid; the next reprojection creates new ones. Protocol handlers still
+    /// used by the map stay registered.
     /// </summary>
-    public async Task ShutdownTileWorkersAsync(CancellationToken cancellationToken = default)
+    public async Task ReleaseProjectionResourcesAsync(CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
-        await _pluginJsModule.InvokeVoidAsync("shutdownTileWorkers", cancellationToken);
-        _tileWorkersShutdown = true;
+        await Module.InvokeVoidAsync("releaseProjectionResources", cancellationToken, MapReference);
+        _projectionResourcesReleased = true;
     }
 
-    /// <summary>Whether <see cref="ShutdownTileWorkersAsync"/> was called since the last apply.</summary>
-    public bool TileWorkersShutdown => _tileWorkersShutdown;
+    /// <summary>Whether <see cref="ReleaseProjectionResourcesAsync"/> was called since the last apply.</summary>
+    public bool ProjectionResourcesReleased => _projectionResourcesReleased;
 
     /// <summary>
-    /// Returns the import map entries the plugin uses to resolve its vendored modules.
-    /// Hosts without dynamic import map support (Firefox/Safari) can copy these into a static
-    /// <c>&lt;script type="importmap"&gt;</c> before Blazor starts.
+    /// Returns the <c>imports</c> entries that the plugin uses to resolve its vendored modules. Browsers read import
+    /// maps only before the first module script loads, so copy these entries into a static
+    /// <c>&lt;script type="importmap"&gt;</c> in the host page <b>before</b> the Blazor framework script. Entries that
+    /// the plugin adds at runtime are a fallback. The plugin logs a warning when the browser ignores them.
     /// </summary>
     public async Task<JsonObject> GetImportMapAsync(CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
-        return await _pluginJsModule.InvokeAsync<JsonObject>("getImportMap", cancellationToken);
+        return await Module.InvokeAsync<JsonObject>("getImportMap", cancellationToken);
     }
 
     /// <summary>Returns the vendored dependency manifest (package names and versions).</summary>
     public async Task<JsonObject?> GetVendorManifestAsync(CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
-        return await _pluginJsModule.InvokeAsync<JsonObject?>("getVendorManifest", cancellationToken);
+        return await Module.InvokeAsync<JsonObject?>("getVendorManifest", cancellationToken);
     }
 
     #endregion

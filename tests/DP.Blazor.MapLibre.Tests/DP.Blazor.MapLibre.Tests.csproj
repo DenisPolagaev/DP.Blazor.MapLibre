@@ -23,6 +23,7 @@
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
         <PackageReference Include="FluentAssertions" Version="6.12.2" />
+        <PackageReference Include="bunit" Version="1.40.0" />
     </ItemGroup>
 
     <ItemGroup>
@@ -31,6 +32,10 @@
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.FrameratePlugin\DP.Blazor.MapLibre.FrameratePlugin.csproj" />
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.TerraDrawPlugin\DP.Blazor.MapLibre.TerraDrawPlugin.csproj" />
         <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.StarfieldPlugin\DP.Blazor.MapLibre.StarfieldPlugin.csproj" />
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.ComparePlugin\DP.Blazor.MapLibre.ComparePlugin.csproj" />
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.GeoGridPlugin\DP.Blazor.MapLibre.GeoGridPlugin.csproj" />
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.PmtilesPlugin\DP.Blazor.MapLibre.PmtilesPlugin.csproj" />
+        <ProjectReference Include="..\..\src\plugins\DP.Blazor.MapLibre.ProjPlugin\DP.Blazor.MapLibre.ProjPlugin.csproj" />
     </ItemGroup>
 
 </Project>

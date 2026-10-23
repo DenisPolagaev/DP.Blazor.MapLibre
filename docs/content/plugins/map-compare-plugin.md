@@ -10,19 +10,13 @@ The plugin project lives at `src/plugins/DP.Blazor.MapLibre.ComparePlugin`.
 dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.ComparePlugin/DP.Blazor.MapLibre.ComparePlugin.csproj
 ```
 
-Add MapLibre CSS (and optionally compare CSS) to your host page. Do **not** load `maplibre-gl-compare.js` in the host — `InitializeAsync` loads the UMD and attaches it to `window.maplibregl.Compare` (and injects compare CSS if missing):
+Add the MapLibre stylesheet to your host page. Do **not** add the compare stylesheet or script: the plugin loads `maplibre-gl-compare.js` and its CSS itself when it is initialized.
 
 ```html
 <link href="_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
-<!-- Optional: early CSS. ComparePlugin.InitializeAsync also injects this stylesheet. -->
-<link href="_content/MapComparePlugin/maplibre-gl-compare/dist/maplibre-gl-compare.css" rel="stylesheet" />
-<script type="module">
-  import * as maplibregl from './_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs';
-  globalThis.maplibregl = maplibregl;
-</script>
 ```
 
-`InitializeAsync` calls `prepareMapLibreGl` for the MapLibre ESM bundle when needed, then loads `maplibre-gl-compare.js`.
+The plugin is registered with the **before** map. When that map initializes, the plugin loads its module and the compare library.
 
 ## Usage
 
@@ -32,12 +26,14 @@ Place two `MapLibre` components inside a shared container (both maps must use `p
 @using DP.Blazor.MapLibre.ComparePlugin
 
 <div id="comparison-container" class="comparison-container">
-    <MapLibre MapId="before" Options="_beforeOptions" OnLoad="OnMapsReady" Class="map" Height="100%" />
+    <MapLibre MapId="before" Options="_beforeOptions" Plugins="_beforePlugins" OnLoad="OnMapsReady" Class="map" Height="100%" />
     <MapLibre MapId="after" Options="_afterOptions" OnLoad="OnMapsReady" Class="map" Height="100%" />
 </div>
 
 @code {
-    private ComparePlugin _compare = new();
+    private readonly ComparePlugin _compare = new();
+    // Passed to the before map: the map initializes and disposes the plugin.
+    private IEnumerable<IMapLibrePlugin> _beforePlugins => [_compare];
     private int _mapsLoaded;
 
     private async Task OnMapsReady(EventArgs _)
@@ -47,7 +43,6 @@ Place two `MapLibre` components inside a shared container (both maps must use `p
             return;
         }
 
-        await _compare.InitializeAsync(JsRuntime);
         await _compare.CreateAsync("before", "after", "#comparison-container");
     }
 }
@@ -59,7 +54,6 @@ The container CSS should position both maps absolutely so they overlap. See `exa
 
 | Method | Description |
 |--------|-------------|
-| `InitializeAsync(IJSRuntime)` | Load maplibre-gl-compare assets. |
 | `CreateAsync(beforeMap, afterMap, containerSelector, options?)` | Attach the compare slider. |
 | `GetCurrentPositionAsync()` | Current slider position in pixels. |
 | `SetSliderAsync(position)` | Set slider position in pixels. |

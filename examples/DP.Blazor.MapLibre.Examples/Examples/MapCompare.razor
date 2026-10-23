@@ -23,6 +23,7 @@
     <MapLibre @ref="_beforeMap"
               MapId="@_beforeMapId"
               Options="_beforeMapOptions"
+              Plugins="_beforePlugins"
               OnLoad="OnBeforeMapLoaded"
               Class="map"
               Height="100%"
@@ -68,8 +69,6 @@
 </style>
 
 @code {
-    [Inject] private IJSRuntime JsRuntime { get; set; } = null!;
-
     private const string DollarTreeGeoJson = "/data/compare/dollar-tree.geojson";
     private const string FamilyDollarGeoJson = "/data/compare/family-dollar.geojson";
 
@@ -79,7 +78,10 @@
 
     private MapLibre _beforeMap = new();
     private MapLibre _afterMap = new();
-    private ComparePlugin _compare = new();
+    private readonly ComparePlugin _compare = new();
+
+    // The before map owns the plugin: it initializes and disposes it.
+    private IEnumerable<IMapLibrePlugin> _beforePlugins => [_compare];
     private Listener? _slideEndListener;
     private bool _compareCreated;
     private bool _attachStarted;
@@ -176,8 +178,6 @@
             return;
         }
 
-        await _compare.InitializeAsync(JsRuntime);
-
         for (var attempt = 0; attempt < 50 && !_compareCreated; attempt++)
         {
             if (_mapsConfigured < 2 || !await _compare.MapsReadyAsync(_beforeMapId, _afterMapId))
@@ -260,6 +260,5 @@
         {
             await _slideEndListener.DisposeAsync();
         }
-        await _compare.DisposeAsync();
     }
 }

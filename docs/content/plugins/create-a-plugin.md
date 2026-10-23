@@ -50,22 +50,20 @@ map method.
     Create a file named `MyMapLibreRotationPlugin.js` in the `/wwwroot` folder as below.
 
     ```javascript
-    let mapObject = {};
-    let pluginDotnetReference = {};
-    
-    export function initialize(map, dotnetReference) {
-        mapObject = map;
-        pluginDotnetReference = dotnetReference;
-        console.log("Plugin initialized");
+    import { getMapState } from '../DP.Blazor.MapLibre/PluginRuntime.js';
+
+    // Keep state per map (never in module-level variables): several maps can host this plugin.
+    export function initialize(map) {
+        getMapState(map, 'MyMapLibreRotationPlugin', () => ({}));
     }
-    
+
     // See https://maplibre.org/maplibre-gl-js/docs/examples/animate-camera-around-point/
-    export function rotate(duration) {
+    export function rotate(map, duration) {
         const rotate = (startTime) => {
             const elapsed = Date.now() - startTime;
             const progress = elapsed / duration;
             const degrees = progress * 360;
-            mapObject.rotateTo(degrees % 360, { duration: 0 });
+            map.rotateTo(degrees % 360, { duration: 0 });
             if (elapsed < duration) {
                 requestAnimationFrame(() => rotate(startTime));
             }
@@ -74,45 +72,33 @@ map method.
     }
     ```
 
-    Accepting the `dotnetReference` into the JavaScript module enables call back to the plugin C# class. It's not used in this example, but the implementation does not differ from the official guidance. See [Call .NET methods from JavaScript functions in ASP.NET Core Blazor](https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/call-dotnet-from-javascript?view=aspnetcore-9.0). It could be used to notify the plugin C# class that the JavaScript module has initialized, or the rotation has completed for example.
+    If the JavaScript module needs to call back into the plugin class, pass a `DotNetObjectReference` from the plugin by overriding `OnModuleLoadedAsync` and calling `initialize(map, dotnetReference)` yourself. See [Call .NET methods from JavaScript functions in ASP.NET Core Blazor](https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/call-dotnet-from-javascript?view=aspnetcore-9.0).
 
 4. Create a plugin class.
 
-    Plugins must implement the `IMapLibrePlugin` interface, and should load in any JavaScript modules in the `Initialize` method, and perform any other setup needed.
+    Derive from `MapLibreJsPlugin`. The base class loads the module (after making sure the MapLibre GL JS bundle is ready), calls `initialize(map)`, handles detach and disposal, and releases the module reference. Override `ModulePath`, and override the other hooks only when you need them.
 
     ```csharp
-    public class MyMapLibreRotationPlugin : IMapLibrePlugin
+    public sealed class MyMapLibreRotationPlugin : MapLibreJsPlugin
     {
-        private DotNetObjectReference<MyMapLibreRotationPlugin> PluginDotNetReference { get; set; } = null!;
-        private IJSObjectReference PluginJsModule { get; set; } = null!;
-        
-        public async Task Initialize(IJSObjectReference map, IJSRuntime runtime)
+        private IJSObjectReference? _map;
+
+        protected override string ModulePath => "./_content/MyMapLibreRotationPlugin/MyMapLibreRotationPlugin.js";
+
+        protected override ValueTask OnModuleLoadedAsync(IJSObjectReference map, CancellationToken cancellationToken)
         {
-            PluginDotNetReference = DotNetObjectReference.Create(this);
-            PluginJsModule = await runtime
-                .InvokeAsync<IJSObjectReference>("import", "./_content/MyMapLibreRotationPlugin/MyMapLibreRotationPlugin.js");
-            
-            await PluginJsModule.InvokeVoidAsync("initialize", map, PluginDotNetReference);
+            _map = map;
+            return base.OnModuleLoadedAsync(map, cancellationToken);
         }
-        
-        public async ValueTask Rotate(int duration) => 
-            await PluginJsModule.InvokeVoidAsync("rotate", duration);
-        
-        public async ValueTask DisposeAsync()
-        {
-            try
-            {
-                await PluginJsModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-            catch (ObjectDisposedException) { }
-            
-            PluginDotNetReference?.Dispose();
-            PluginDotNetReference = null;
-        }
+
+        public ValueTask Rotate(int duration) => Module.InvokeVoidAsync("rotate", _map, duration);
     }
     ```
 
+    - `Module` is available after initialization. Calling it before the plugin is initialized throws `InvalidOperationException`.
+    - Use `OnDetachModuleAsync` to remove visible effects (for example a control) and `OnModuleDisposingAsync` for JavaScript teardown. The base class disposes the module reference; do not dispose `Module` yourself.
+    - Log through `Logger` (provided by the map), not `Debug.WriteLine`.
+    - Controls: derive from `MapLibreControlPlugin<TOptions>` instead. It adds and removes the control through the module's `addControl(map, options, position)` and `removeControl(map)` exports.
    - Since the JavaScript module is being loaded from a Razor Class Library, use a base-relative path `./_content/{NAMESPACE}/{MODULE_FILE_NAME}.js` (works with `<base href>` on GitHub Pages and similar hosts).
    - The plugin is not responsible for disposing the `MapObject` since a that reference was provided to it by the core `MapLibre` component during initialization.
 
@@ -124,12 +110,22 @@ map method.
 
 6. Register your plugin with the MapLibre component.
 
-    In the `OnAfterRenderAsync` method of the page/component that contains the `MapLibre` component.
+    The recommended way is dependency injection. Each map gets its own plugin instance, so one plugin type can be used on several maps.
 
     ```csharp
-    private MapLibre? _map { get; set; }
-    private MyMapLibreRotationPlugin _myMapLibreRotationPlugin = new();
-        
+    // Program.cs
+    builder.Services.AddMapLibrePlugin<MyMapLibreRotationPlugin>();
+    ```
+
+    ```razor
+    <MapLibre UseRegisteredPlugins="true" ... />
+    ```
+
+    To use a specific instance instead, pass it through the `Plugins` parameter, or call `RegisterPlugin` (for example in `OnAfterRenderAsync`). Either way the map owns the plugin and disposes it.
+
+    ```csharp
+    private readonly MyMapLibreRotationPlugin _myMapLibreRotationPlugin = new();
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -138,7 +134,6 @@ map method.
         }
     }
     ```
-
 7. Use the capabilities exposed by your plugin.
 
     For example, in the `OnMapLoad` call back for the `MapLibre` component, you can use your plugin to invoke the capabilities it exposes.
@@ -154,9 +149,9 @@ map method.
 
 The repository includes plugin projects you can use as starting points:
 
-- [Terra Draw plugin](./terra-draw-plugin.md) — drawing and geometry editing with Terra Draw
-- [Map Compare plugin](./map-compare-plugin.md) — swipe and sync between two maps with [maplibre-gl-compare](https://github.com/maplibre/maplibre-gl-compare)
-- [Minimap plugin](./minimap-plugin.md) — overview minimap control ([mapboxgl-minimap](https://github.com/aesqe/mapboxgl-minimap))
-- [Frame rate plugin](./framerate-plugin.md) — rendering performance overlay ([mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate))
-- [Geo grid plugin](./geogrid-plugin.md) — geographic graticule with labels ([geogrid-maplibre-gl](https://github.com/falseinput/geogrid-maplibre-gl))
-- [Mapbox GL Draw plugin](./mapbox-gl-draw-plugin.md) — reference plugin in the examples solution
+- [Terra Draw plugin](./terra-draw-plugin.md) вЂ” drawing and geometry editing with Terra Draw
+- [Map Compare plugin](./map-compare-plugin.md) вЂ” swipe and sync between two maps with [maplibre-gl-compare](https://github.com/maplibre/maplibre-gl-compare)
+- [Minimap plugin](./minimap-plugin.md) вЂ” overview minimap control ([mapboxgl-minimap](https://github.com/aesqe/mapboxgl-minimap))
+- [Frame rate plugin](./framerate-plugin.md) вЂ” rendering performance overlay ([mapbox-gl-framerate](https://github.com/mapbox/mapbox-gl-framerate))
+- [Geo grid plugin](./geogrid-plugin.md) вЂ” geographic graticule with labels ([geogrid-maplibre-gl](https://github.com/falseinput/geogrid-maplibre-gl))
+- [Mapbox GL Draw plugin](./mapbox-gl-draw-plugin.md) вЂ” reference plugin in the examples solution

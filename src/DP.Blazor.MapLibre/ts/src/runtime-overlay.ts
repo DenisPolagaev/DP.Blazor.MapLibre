@@ -53,13 +53,6 @@ export function recordSourceTiles(store: OverlayStore, id: string, tiles: unknow
     }
 }
 
-export function recordSourceUrl(store: OverlayStore, id: string, url: string): void {
-    const spec = store.sources.get(id);
-    if (spec && typeof spec === 'object') {
-        (spec as Record<string, unknown>).url = url;
-    }
-}
-
 export function forgetSource(store: OverlayStore, id: string): void {
     store.sources.delete(id);
     store.layers = store.layers.filter((layer) => layer.spec['source'] !== id);

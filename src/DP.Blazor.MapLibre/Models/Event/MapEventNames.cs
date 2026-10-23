@@ -69,4 +69,7 @@ public static class MapEventNames
     public const string CooperativeGesturePrevented = "cooperativegestureprevented";
     public const string ProjectionTransition = "projectiontransition";
     public const string Terrain = "terrain";
+
+    public const string Open = "open";
+    public const string Close = "close";
 }

@@ -1,46 +1,47 @@
 using System.Text.Json;
-using Microsoft.JSInterop;
 
 namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 
 public sealed partial class TerraDrawPlugin
 {
+    #region Library helpers
+
     public async ValueTask<JsonElement> GetDefaultControlOptionsAsync() =>
-        await _pluginJsModule.InvokeAsync<JsonElement>("getDefaultControlOptions");
+        await CallLibraryAsync<JsonElement>("getDefaultControlOptions");
 
     public async ValueTask<JsonElement> GetDefaultMeasureControlOptionsAsync() =>
-        await _pluginJsModule.InvokeAsync<JsonElement>("getDefaultMeasureControlOptions");
+        await CallLibraryAsync<JsonElement>("getDefaultMeasureControlOptions");
 
     public async ValueTask<JsonElement> GetDefaultValhallaControlOptionsAsync() =>
-        await _pluginJsModule.InvokeAsync<JsonElement>("getDefaultValhallaControlOptions");
+        await CallLibraryAsync<JsonElement>("getDefaultValhallaControlOptions");
 
     public async ValueTask<JsonElement> GetDefaultMeasureUnitSymbolsAsync() =>
-        await _pluginJsModule.InvokeAsync<JsonElement>("getDefaultMeasureUnitSymbols");
+        await CallLibraryAsync<JsonElement>("getDefaultMeasureUnitSymbols");
 
     public async ValueTask<JsonElement> GetDefaultModeOptionsAsync() =>
-        await _pluginJsModule.InvokeAsync<JsonElement>("getDefaultModeOptions");
+        await CallLibraryAsync<JsonElement>("getDefaultModeOptions");
 
     public async ValueTask<string[]> GetTerradrawSourceIdsAsync() =>
-        await _pluginJsModule.InvokeAsync<string[]>("getTerradrawSourceIds");
+        await CallLibraryAsync<string[]>("getTerradrawSourceIds");
 
     public async ValueTask<string[]> GetMeasureSourceIdsAsync() =>
-        await _pluginJsModule.InvokeAsync<string[]>("getMeasureSourceIds");
+        await CallLibraryAsync<string[]>("getMeasureSourceIds");
 
     public async ValueTask<string[]> GetValhallaSourceIdsAsync() =>
-        await _pluginJsModule.InvokeAsync<string[]>("getValhallaSourceIds");
+        await CallLibraryAsync<string[]>("getValhallaSourceIds");
 
     public async ValueTask<TerrainSource> GetAwsElevationTilesAsync() =>
-        await _pluginJsModule.InvokeAsync<TerrainSource>("getAwsElevationTiles");
+        await CallLibraryAsync<TerrainSource>("getAwsElevationTiles");
 
     public async ValueTask<TerrainSource> GetMapterhornTilesAsync() =>
-        await _pluginJsModule.InvokeAsync<TerrainSource>("getMapterhornTiles");
+        await CallLibraryAsync<TerrainSource>("getMapterhornTiles");
 
     public async ValueTask<string> CleanLibraryStyleAsync(
         string styleJson,
         CleanStyleOptions? options = null,
         IList<string>? sourceIds = null,
         string? prefixId = null) =>
-        await _pluginJsModule.InvokeAsync<string>(
+        await CallLibraryAsync<string>(
             "cleanLibraryStyle",
             styleJson,
             options,
@@ -53,7 +54,7 @@ public sealed partial class TerraDrawPlugin
         int areaPrecision,
         string? areaUnit = null,
         Dictionary<string, string>? measureUnitSymbols = null) =>
-        await _pluginJsModule.InvokeAsync<string>(
+        await CallLibraryAsync<string>(
             "calcArea",
             featureJson,
             measureUnitType,
@@ -61,13 +62,21 @@ public sealed partial class TerraDrawPlugin
             areaUnit,
             measureUnitSymbols);
 
+    public async ValueTask<string> CalcAreaAsync(
+        string featureJson,
+        TerraDrawMeasureUnit measureUnitType,
+        int areaPrecision,
+        string? areaUnit = null,
+        Dictionary<string, string>? measureUnitSymbols = null) =>
+        await CalcAreaAsync(featureJson, measureUnitType.ToWireName(), areaPrecision, areaUnit, measureUnitSymbols);
+
     public async ValueTask<string> CalcDistanceAsync(
         string featureJson,
         string measureUnitType,
         int distancePrecision,
         string? distanceUnit = null,
         Dictionary<string, string>? measureUnitSymbols = null) =>
-        await _pluginJsModule.InvokeAsync<string>(
+        await CallLibraryAsync<string>(
             "calcDistance",
             featureJson,
             measureUnitType,
@@ -75,12 +84,22 @@ public sealed partial class TerraDrawPlugin
             distanceUnit,
             measureUnitSymbols);
 
+    public async ValueTask<string> CalcDistanceAsync(
+        string featureJson,
+        TerraDrawMeasureUnit measureUnitType,
+        int distancePrecision,
+        string? distanceUnit = null,
+        Dictionary<string, string>? measureUnitSymbols = null) =>
+        await CalcDistanceAsync(featureJson, measureUnitType.ToWireName(), distancePrecision, distanceUnit, measureUnitSymbols);
+
     public async ValueTask<double> ConvertAreaAsync(double valueInSquareMeters, string unit) =>
-        await _pluginJsModule.InvokeAsync<double>("convertArea", valueInSquareMeters, unit);
+        await CallLibraryAsync<double>("convertArea", valueInSquareMeters, unit);
 
     public async ValueTask<double> ConvertDistanceAsync(double valueInMeters, string unit) =>
-        await _pluginJsModule.InvokeAsync<double>("convertDistance", valueInMeters, unit);
+        await CallLibraryAsync<double>("convertDistance", valueInMeters, unit);
 
     public async ValueTask<double> ConvertElevationAsync(double valueInMeters, string unit) =>
-        await _pluginJsModule.InvokeAsync<double>("convertElevation", valueInMeters, unit);
+        await CallLibraryAsync<double>("convertElevation", valueInMeters, unit);
+
+    #endregion
 }

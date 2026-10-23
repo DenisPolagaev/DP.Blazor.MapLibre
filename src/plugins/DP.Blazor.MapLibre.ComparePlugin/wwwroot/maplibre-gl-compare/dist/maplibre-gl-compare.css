@@ -1,3 +1,9 @@
+/*
+ * Vendored third-party file: maplibre-gl-compare (https://github.com/maplibre/maplibre-gl-compare), dist build.
+ * Version: not recorded in this file; check the upstream release that matches the bundled build when upgrading.
+ * License and copyright: see the upstream repository. This notice does not state a copyright holder.
+ * Do not edit; replace the whole dist folder when upgrading.
+ */
 .maplibregl-compare {
   background-color: #fff;
   position: absolute;

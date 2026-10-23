@@ -57,3 +57,5 @@ Each `Add*ControlAsync` method returns a `controlId`, so several controls (draw 
 ## License
 
 Targets .NET 8, 9, 10 and 11. Released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).
+
+The package bundles `@watergis/maplibre-gl-terradraw` 1.13.2. See [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); its license is not verified in the repository.

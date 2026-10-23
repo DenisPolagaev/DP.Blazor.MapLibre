@@ -9,7 +9,10 @@ namespace DP.Blazor.MapLibre.MinimapPlugin;
 /// and minimap zoom is greater than or equal to <see cref="MinimapZoom"/>,
 /// the minimap zoom is set to <see cref="TargetZoom"/>.
 /// </summary>
-public sealed record MinimapZoomLevel(int ParentZoom, int MinimapZoom, int TargetZoom);
+public sealed record MinimapZoomLevel(
+    [property: JsonPropertyName("parentZoom")] int ParentZoom,
+    [property: JsonPropertyName("minimapZoom")] int MinimapZoom,
+    [property: JsonPropertyName("targetZoom")] int TargetZoom);
 
 /// <summary>
 /// Configuration options for the MapLibre minimap control
@@ -32,7 +35,11 @@ public sealed record MinimapControlOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Height { get; init; }
 
-    /// <summary>Map style URL or JSON for the minimap.</summary>
+    /// <summary>
+    /// Style of the minimap: a style URL (<c>string</c>) or a MapLibre style document (any object that serializes
+    /// to the style JSON). The value is serialized as-is and passed to the MapLibre <c>Map</c> constructor.
+    /// Defaults to the MapLibre demo style when omitted.
+    /// </summary>
     [JsonPropertyName("style")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public object? Style { get; init; }

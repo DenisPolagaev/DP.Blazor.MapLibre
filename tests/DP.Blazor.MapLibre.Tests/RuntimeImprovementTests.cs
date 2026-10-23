@@ -24,7 +24,7 @@ public class RuntimeImprovementTests
     {
         MapStyle.OpenFreeMap.Liberty.ToStylePayload().Should().Be("https://tiles.openfreemap.org/styles/liberty");
 
-        var wms = MapStyle.FromWmsUrl("https://example.test/wms", "layer1", "© test");
+        var wms = MapStyle.FromWmsUrl("https://example.test/wms", "layer1", "В© test");
         var payload = wms.ToStylePayload();
         JsonSerializer.Serialize(payload).Should().Contain("GetMap");
     }
@@ -95,9 +95,9 @@ public class RuntimeImprovementTests
     }
 
     [Fact]
-    public void MapStyles_OpenStreetMap_Uses_Typed_Factory()
+    public void MapStyle_OpenStreetMap_Builds_A_Style_Payload()
     {
-        MapStyles.OpenStreetMap.Should().NotBeNull();
-        MapStyles.OpenFreeMapLiberty.Should().Be("https://tiles.openfreemap.org/styles/liberty");
+        MapStyle.OpenStreetMap.Standard.ToStylePayload().Should().NotBeNull();
+        MapStyle.OpenFreeMap.Liberty.ToStylePayload().Should().Be("https://tiles.openfreemap.org/styles/liberty");
     }
 }

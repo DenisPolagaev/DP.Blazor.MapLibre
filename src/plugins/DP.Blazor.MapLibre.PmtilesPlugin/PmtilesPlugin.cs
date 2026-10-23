@@ -7,51 +7,45 @@ namespace DP.Blazor.MapLibre.PmtilesPlugin;
 /// Registers the <c>pmtiles://</c> protocol on MapLibre GL JS
 /// (<see href="https://github.com/protomaps/PMTiles">protomaps/PMTiles</see>).
 /// Register with the map before adding sources whose URL starts with <c>pmtiles://</c>.
-/// The protocol is process-global; one successful initialize is enough for every map on the page.
+/// The protocol is page-global: it is shared by all maps and removed only when the last initialized
+/// <see cref="PmtilesPlugin"/> instance is disposed.
 /// </summary>
-public sealed class PmtilesPlugin : MapLibrePluginBase
+public sealed class PmtilesPlugin : MapLibreJsPlugin
 {
     #region Fields
 
-    private IJSObjectReference? _pluginJsModule;
+    // Set only after the JavaScript protocol reference was acquired, so dispose pairs with initialize.
+    private bool _protocolAcquired;
+
+    #endregion
+
+    #region Properties
+
+    /// <summary>Static asset path of the plugin module.</summary>
+    protected override string ModulePath => "./_content/PmtilesPlugin/PmtilesPlugin.js";
 
     #endregion
 
     #region Lifecycle Overrides
 
-    protected override async Task OnInitializeAsync(
-        IJSObjectReference map,
-        IJSRuntime runtime,
-        CancellationToken cancellationToken)
+    /// <summary>Registers the protocol. The protocol takes no map argument.</summary>
+    protected override async ValueTask OnModuleLoadedAsync(IJSObjectReference map, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(map);
-        _pluginJsModule = await runtime.InvokeAsync<IJSObjectReference>(
-            "import",
-            cancellationToken,
-            "./_content/PmtilesPlugin/PmtilesPlugin.js");
-        await _pluginJsModule.InvokeVoidAsync("initialize", cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await Module.InvokeVoidAsync("initialize");
+        _protocolAcquired = true;
     }
 
-    protected override ValueTask OnDetachAsync(CancellationToken cancellationToken) =>
-        ValueTask.CompletedTask;
-
-    protected override async ValueTask OnDisposeAsync()
+    /// <inheritdoc />
+    protected override async ValueTask OnModuleDisposingAsync()
     {
-        var pluginModule = _pluginJsModule;
-        if (pluginModule is null)
+        if (!_protocolAcquired)
         {
             return;
         }
 
-        try
-        {
-            await pluginModule.InvokeVoidAsync("dispose");
-            await pluginModule.DisposeAsync();
-        }
-        finally
-        {
-            _pluginJsModule = null;
-        }
+        _protocolAcquired = false;
+        await Module.InvokeVoidAsync("dispose");
     }
 
     #endregion

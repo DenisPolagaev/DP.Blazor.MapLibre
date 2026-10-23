@@ -12,15 +12,7 @@ dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.GeoGridPlugin/DP.Blazo
 
 ## Stylesheet
 
-The plugin does **not** inject CSS at runtime. Grid lines are MapLibre layers and render without extra styles, but **edge labels** need the bundled stylesheet for correct positioning (`transform` offsets).
-
-Add this to your app host page or layout (for example in `App.razor`, `index.html`, or a `.razor` page that uses the plugin):
-
-```html
-<link rel="stylesheet" href="_content/GeoGridPlugin/geogrid/geogrid.css" />
-```
-
-You can omit the stylesheet if you do not need labels, or if you provide equivalent CSS for the `.geogrid` and `.geogrid__label` classes yourself.
+No stylesheet link is needed. The plugin loads `geogrid.css` itself when it initializes; the stylesheet positions the edge labels.
 
 ## Register the plugin
 
@@ -30,8 +22,6 @@ Because `OnStyleLoad` can fire before the parent page registers the plugin, eith
 
 ```csharp
 @using DP.Blazor.MapLibre.GeoGridPlugin
-
-<link rel="stylesheet" href="_content/GeoGridPlugin/geogrid/geogrid.css" />
 
 <MapLibre @ref="_map"
           Options="_options"

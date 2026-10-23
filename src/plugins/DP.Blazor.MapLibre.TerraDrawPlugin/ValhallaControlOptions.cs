@@ -7,61 +7,41 @@ namespace DP.Blazor.MapLibre.TerraDrawPlugin;
 /// Options for <see cref="TerraDrawPlugin.AddValhallaControlAsync"/>.
 /// Mirrors <c>ValhallaControlOptions</c> from maplibre-gl-terradraw.
 /// </summary>
-public sealed class ValhallaControlOptions
+public sealed class ValhallaControlOptions : TerraDrawControlOptionsBase
 {
-    [JsonPropertyName("modes")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IList<string>? Modes { get; set; }
-
-    [JsonPropertyName("open")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? Open { get; set; }
-
-    [JsonPropertyName("showDeleteConfirmation")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowDeleteConfirmation { get; set; }
-
-    [JsonPropertyName("modeOptions")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerraDrawModeOptions? ModeOptions { get; set; }
-
-    [JsonPropertyName("adapterOptions")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TerraDrawAdapterOptions? AdapterOptions { get; set; }
-
     [JsonPropertyName("valhallaOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ValhallaOptions? ValhallaOptions { get; set; }
+    public ValhallaOptions? ValhallaOptions { get; init; }
 
     [JsonPropertyName("routingLineLayerNodeLabelSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? RoutingLineLayerNodeLabelSpec { get; set; }
+    public JsonElement? RoutingLineLayerNodeLabelSpec { get; init; }
 
     [JsonPropertyName("routingLineLayerNodeSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? RoutingLineLayerNodeSpec { get; set; }
+    public JsonElement? RoutingLineLayerNodeSpec { get; init; }
 
     [JsonPropertyName("timeIsochronePolygonLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? TimeIsochronePolygonLayerSpec { get; set; }
+    public JsonElement? TimeIsochronePolygonLayerSpec { get; init; }
 
     [JsonPropertyName("timeIsochroneLineLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? TimeIsochroneLineLayerSpec { get; set; }
+    public JsonElement? TimeIsochroneLineLayerSpec { get; init; }
 
     [JsonPropertyName("timeIsochroneLabelLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? TimeIsochroneLabelLayerSpec { get; set; }
+    public JsonElement? TimeIsochroneLabelLayerSpec { get; init; }
 
     [JsonPropertyName("distanceIsochronePolygonLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? DistanceIsochronePolygonLayerSpec { get; set; }
+    public JsonElement? DistanceIsochronePolygonLayerSpec { get; init; }
 
     [JsonPropertyName("distanceIsochroneLineLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? DistanceIsochroneLineLayerSpec { get; set; }
+    public JsonElement? DistanceIsochroneLineLayerSpec { get; init; }
 
     [JsonPropertyName("distanceIsochroneLabelLayerSpec")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? DistanceIsochroneLabelLayerSpec { get; set; }
+    public JsonElement? DistanceIsochroneLabelLayerSpec { get; init; }
 }

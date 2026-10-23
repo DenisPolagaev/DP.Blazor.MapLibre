@@ -1,4 +1,6 @@
 using Microsoft.JSInterop;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 
 namespace DP.Blazor.MapLibre;
@@ -18,6 +20,12 @@ public class CallbackHandler
     private DotNetObjectReference<CallbackHandler>? _dotNetReference;
     private Action<string>? _onRemoved;
     private bool _removed;
+
+    /// <summary>
+    /// False for marker and popup listeners, which are removed with their marker or popup rather than by
+    /// <c>RemoveAllListeners</c> on the map.
+    /// </summary>
+    internal bool IsMapScoped { get; set; } = true;
 
     /// <summary>
     /// The MapLibre event name this handler is registered for.
@@ -77,23 +85,30 @@ public class CallbackHandler
 
         _removed = true;
 
-        if (_listenerId is not null)
+        try
         {
-            var removedId = _listenerId;
-            if (_removeMethod is not null)
+            if (_listenerId is not null)
             {
-                await _jsModule.InvokeVoidAsync(_removeMethod, removedId);
-            }
-            else
-            {
-                await _jsModule.InvokeVoidAsync("off", _mapId, removedId);
-            }
-            _onRemoved?.Invoke(removedId);
-            _listenerId = null;
-        }
+                var removedId = _listenerId;
+                if (_removeMethod is not null)
+                {
+                    await _jsModule.InvokeVoidAsync(_removeMethod, removedId);
+                }
+                else
+                {
+                    await _jsModule.InvokeVoidAsync("off", _mapId, removedId);
+                }
 
-        _dotNetReference?.Dispose();
-        _dotNetReference = null;
+                _onRemoved?.Invoke(removedId);
+                _listenerId = null;
+            }
+        }
+        finally
+        {
+            // Release the .NET reference even when the JS side fails or the circuit is already gone.
+            _dotNetReference?.Dispose();
+            _dotNetReference = null;
+        }
     }
 
     /// <summary>
@@ -104,7 +119,7 @@ public class CallbackHandler
     {
         if (string.IsNullOrWhiteSpace(args) || _argumentType is null)
         {
-            var returnObject = _callbackDelegate.DynamicInvoke();
+            var returnObject = InvokeDelegate();
 
             if (returnObject is Task task)
             {
@@ -124,10 +139,27 @@ public class CallbackHandler
             deserializedArgs = JsonSerializer.Deserialize(args, _argumentType, MapLibreJsonSerializer.Options);
         }
 
-        var returnObjectWithArgs = _callbackDelegate.DynamicInvoke(deserializedArgs);
+        var returnObjectWithArgs = InvokeDelegate(deserializedArgs);
         if (returnObjectWithArgs is Task callbackTaskWithArgs)
         {
             await callbackTaskWithArgs;
+        }
+    }
+
+    /// <summary>
+    /// Calls the user delegate. <see cref="Delegate.DynamicInvoke(object?[])"/> wraps handler exceptions in
+    /// <see cref="TargetInvocationException"/>; the original exception is rethrown so callers see the real failure.
+    /// </summary>
+    private object? InvokeDelegate(params object?[]? arguments)
+    {
+        try
+        {
+            return _callbackDelegate.DynamicInvoke(arguments);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
         }
     }
 }

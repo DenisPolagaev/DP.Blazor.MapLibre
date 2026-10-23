@@ -95,7 +95,7 @@ var result = await _proj.ReprojectStyleAsync(new ProjReprojectOptions
 });
 ```
 
-Call `ReleaseTransformerAsync(id)` to drop a handle, or `ShutdownTileWorkersAsync()` to terminate the shared worker pool (transformers become invalid; the next reprojection recreates the pool).
+Call `ReleaseTransformerAsync(id)` to drop a handle, or `ReleaseProjectionResourcesAsync()` to terminate the shared worker pool (transformers become invalid; the next reprojection recreates the pool).
 
 ## Coordinates
 

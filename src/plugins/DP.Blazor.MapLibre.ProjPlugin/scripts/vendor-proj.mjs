@@ -1,10 +1,14 @@
-// Vendors the maplibre-proj runtime dependency graph into ../wwwroot/vendor.
+// Vendors the proj-wasm pipeline dependency graph (see wwwroot/proj-pipeline.js) into ../wwwroot/vendor.
+// maplibre-proj and backproj are not used and are not vendored.
 //
 // Usage: node scripts/vendor-proj.mjs
 //
 // Downloads pinned package trees from unpkg (no npm/registry auth needed), then prunes
-// build-only files. The output tree is served as a static web asset under
-// _content/ProjPlugin/vendor and wired up by ProjPlugin.js.
+// build-only files. pmtiles is not on unpkg in the required layout; it is copied from the sibling
+// DP.Blazor.MapLibre.PmtilesPlugin so that both plugins ship the same file. The output tree is served
+// as a static web asset under _content/ProjPlugin/vendor and wired up by ProjPlugin.js.
+//
+// The output directory is deleted and rebuilt on every run.
 //
 // Behind a TLS-intercepting proxy, run with NODE_TLS_REJECT_UNAUTHORIZED=0.
 
@@ -29,6 +33,17 @@ const packages = [
   ['@mapbox/vector-tile', '2.0.4', 'mapbox-vector-tile'],
   ['@mapbox/point-geometry', '1.1.0', 'mapbox-point-geometry'],
   ['pbf', '4.0.1', 'pbf'],
+];
+
+// Single-file packages copied from the repository instead of downloaded. `version` is recorded as unknown
+// because neither the file nor the sibling notices carry a version.
+const localPackages = [
+  {
+    name: 'pmtiles',
+    version: 'unknown',
+    dir: 'pmtiles',
+    source: path.resolve(here, '..', '..', 'DP.Blazor.MapLibre.PmtilesPlugin', 'wwwroot', 'pmtiles'),
+  },
 ];
 
 const skipExt = new Set(['.map', '.md', '.ts', '.flow', '.d.ts']);
@@ -83,6 +98,14 @@ for (const [name, version, safe] of packages) {
   totalBytes += bytes;
   manifest.packages.push({ name, version, dir: safe, files: count });
   console.log(`${name}@${version} -> vendor/${safe} (${count} files, ${(bytes / 1024 / 1024).toFixed(2)} MB)`);
+}
+
+for (const local of localPackages) {
+  const dest = path.join(outRoot, local.dir);
+  fs.cpSync(local.source, dest, { recursive: true });
+  const files = fs.readdirSync(dest).filter((f) => fs.statSync(path.join(dest, f)).isFile());
+  manifest.packages.push({ name: local.name, version: local.version, dir: local.dir, files: files.length });
+  console.log(`${local.name} (copied) -> vendor/${local.dir} (${files.length} files)`);
 }
 
 fs.writeFileSync(path.join(outRoot, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

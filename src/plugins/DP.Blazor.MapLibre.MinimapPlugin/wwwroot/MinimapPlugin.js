@@ -1,37 +1,52 @@
-import { registerMinimapControl } from './maplibregl-control-minimap.js';
+import { getMapState, peekMapState, loadStylesheet } from '../DP.Blazor.MapLibre/PluginRuntime.js';
+import { createMinimapControl } from './maplibregl-control-minimap.js';
 
-const mapLibreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+// Stable ids and URLs; the stylesheet is shared by all maps and deduplicated by loadStylesheet.
+const STYLESHEET_ID = 'minimap-plugin';
+const STYLESHEET_HREF = new URL('MinimapPlugin.css', import.meta.url).href;
 
-let mapObject = null;
-let minimapControl = null;
-let dependenciesLoaded = false;
+// Per-map state: the registration promise and the control belong to one map only.
+const STATE_KEY = 'minimap-plugin';
 
-function contentUrl(relativePath) {
-    return new URL(relativePath, document.baseURI).href;
+function stateFor(map) {
+    return getMapState(map, STATE_KEY, () => ({
+        registration: null,
+        Minimap: null,
+        control: null,
+    }));
 }
 
-async function ensureMapLibreGlobal() {
-    if (globalThis.maplibregl?.Map) {
-        return;
-    }
-
-    const mapLibre = await import(contentUrl(mapLibreModulePath));
-    await mapLibre.prepareMapLibreGl();
-    if (!globalThis.maplibregl?.Map) {
+function requireMapLibre() {
+    const maplibregl = globalThis.maplibregl;
+    if (!maplibregl?.Map) {
         throw new Error('MapLibre GL JS failed to load');
     }
+
+    return maplibregl;
 }
 
-function ensureStylesheet() {
-    const href = new URL('MinimapPlugin.css', import.meta.url).href;
-    if (document.querySelector(`link[href="${href}"]`)) {
-        return;
+/**
+ * Loads the stylesheet and creates the control class for this map. The promise is memoized per map, so
+ * concurrent callers share one registration. A failed registration is cleared and can be retried.
+ */
+function ensureRegistered(map) {
+    const state = stateFor(map);
+    if (!state.registration) {
+        state.registration = loadStylesheet(STYLESHEET_ID, STYLESHEET_HREF)
+            .then(() => {
+                if (!state.Minimap) {
+                    state.Minimap = createMinimapControl(requireMapLibre());
+                }
+
+                return state;
+            })
+            .catch((error) => {
+                state.registration = null;
+                throw error;
+            });
     }
 
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    document.head.appendChild(link);
+    return state.registration;
 }
 
 function normalizeOptions(options) {
@@ -62,44 +77,27 @@ function normalizeOptions(options) {
     return normalized;
 }
 
-async function loadDependencies() {
-    if (dependenciesLoaded) {
+export async function initialize(map) {
+    await ensureRegistered(map);
+}
+
+export async function addControl(map, options, position = 'bottom-left') {
+    const state = await ensureRegistered(map);
+
+    removeControl(map);
+
+    const control = new state.Minimap(normalizeOptions(options) ?? {});
+    state.control = control;
+    map.addControl(control, position);
+}
+
+export function removeControl(map) {
+    const state = peekMapState(map, STATE_KEY);
+    const control = state?.control;
+    if (!control) {
         return;
     }
 
-    await ensureMapLibreGlobal();
-    ensureStylesheet();
-    registerMinimapControl(globalThis.maplibregl);
-    dependenciesLoaded = true;
-}
-
-export async function initialize(map) {
-    mapObject = map;
-    await loadDependencies();
-}
-
-export async function addControl(options, position = 'bottom-left') {
-    await loadDependencies();
-
-    if (!mapObject) {
-        throw new Error('Minimap plugin is not initialized.');
-    }
-
-    removeControl();
-
-    const Minimap = globalThis.maplibregl.Minimap;
-    minimapControl = new Minimap(normalizeOptions(options) ?? {});
-    mapObject.addControl(minimapControl, position);
-}
-
-export function removeControl() {
-    if (mapObject && minimapControl) {
-        mapObject.removeControl(minimapControl);
-        minimapControl = null;
-    }
-}
-
-export function dispose() {
-    removeControl();
-    mapObject = null;
+    state.control = null;
+    map.removeControl(control);
 }

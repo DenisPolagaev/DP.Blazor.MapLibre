@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace DP.Blazor.MapLibre.GeoGridPlugin;
 
 /// <summary>
-/// Preset coordinate label formats for <see cref="GeoGrid"/>.
+/// Preset coordinate label formats for <see cref="GeoGridPlugin"/>.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum GeoGridLabelFormat

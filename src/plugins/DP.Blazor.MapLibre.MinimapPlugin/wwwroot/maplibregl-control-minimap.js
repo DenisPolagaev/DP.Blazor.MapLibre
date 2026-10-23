@@ -1,16 +1,51 @@
-/* Adapted from https://github.com/aesqe/mapboxgl-minimap (MIT) for MapLibre GL JS */
+/*
+ * Adapted from mapboxgl-minimap (https://github.com/aesqe/mapboxgl-minimap), version unknown,
+ * for MapLibre GL JS. License: MIT. See THIRD-PARTY-NOTICES.txt in this folder.
+ */
 
-export function registerMinimapControl(maplibregl) {
-    if (!maplibregl) {
-        throw new Error('MapLibre GL JS must be loaded before registering the minimap control.');
+/**
+ * Creates the minimap control class bound to the given MapLibre GL JS namespace.
+ * The class is returned to the caller only; it is not published on the global maplibregl object.
+ * @param {object} maplibregl The MapLibre GL JS namespace (globalThis.maplibregl after prepareMapLibreGl).
+ * @returns {Function} Minimap control constructor.
+ */
+export function createMinimapControl(maplibregl) {
+    if (!maplibregl?.Map) {
+        throw new Error('MapLibre GL JS must be loaded before creating the minimap control.');
     }
 
-    if (maplibregl.Minimap) {
-        return maplibregl.Minimap;
-    }
+    // Defaults are copied per instance, so options of one control never leak into another.
+    const defaultOptions = {
+        id: 'maplibregl-minimap',
+        width: '320px',
+        height: '180px',
+        style: 'https://demotiles.maplibre.org/style.json',
+        center: [0, 0],
+        zoom: 6,
+        zoomAdjust: null,
+        zoomLevels: [
+            [18, 14, 16],
+            [16, 12, 14],
+            [14, 10, 12],
+            [12, 8, 10],
+            [10, 6, 8],
+        ],
+        lineColor: '#08F',
+        lineWidth: 1,
+        lineOpacity: 1,
+        fillColor: '#F80',
+        fillOpacity: 0.25,
+        dragPan: false,
+        scrollZoom: false,
+        boxZoom: false,
+        dragRotate: false,
+        keyboard: false,
+        doubleClickZoom: false,
+        touchZoomRotate: false,
+    };
 
     function Minimap(options) {
-        Object.assign(this.options, options);
+        this.options = { ...defaultOptions, ...options };
         this._ticking = false;
         this._lastMouseMoveEvent = null;
         this._parentMap = null;
@@ -31,35 +66,6 @@ export function registerMinimapControl(maplibregl) {
     }
 
     Minimap.prototype = {
-        options: {
-            id: 'maplibregl-minimap',
-            width: '320px',
-            height: '180px',
-            style: 'https://demotiles.maplibre.org/style.json',
-            center: [0, 0],
-            zoom: 6,
-            zoomAdjust: null,
-            zoomLevels: [
-                [18, 14, 16],
-                [16, 12, 14],
-                [14, 10, 12],
-                [12, 8, 10],
-                [10, 6, 8],
-            ],
-            lineColor: '#08F',
-            lineWidth: 1,
-            lineOpacity: 1,
-            fillColor: '#F80',
-            fillOpacity: 0.25,
-            dragPan: false,
-            scrollZoom: false,
-            boxZoom: false,
-            dragRotate: false,
-            keyboard: false,
-            doubleClickZoom: false,
-            touchZoomRotate: false,
-        },
-
         onAdd(parentMap) {
             this._removed = false;
             this._parentMap = parentMap;
@@ -319,6 +325,7 @@ export function registerMinimapControl(maplibregl) {
             const ne = getNorthEast(bounds);
             const sw = getSouthWest(bounds);
             const newBounds = createLngLatBoundsFromCorners(
+                maplibregl.LngLatBounds,
                 sw.lng - offset[0],
                 sw.lat - offset[1],
                 ne.lng - offset[0],
@@ -468,7 +475,6 @@ export function registerMinimapControl(maplibregl) {
         },
     };
 
-    maplibregl.Minimap = Minimap;
     return Minimap;
 }
 
@@ -569,7 +575,7 @@ function areBoundsInsideMapView(innerBounds, map) {
         && inner.ne.lat <= outer.ne.lat;
 }
 
-function createLngLatBoundsFromCorners(west, south, east, north) {
+function createLngLatBoundsFromCorners(LngLatBounds, west, south, east, north) {
     const swLng = clampLng(west);
     const swLat = clampLat(south);
     const neLng = clampLng(east);
@@ -588,7 +594,7 @@ function createLngLatBoundsFromCorners(west, south, east, north) {
         return null;
     }
 
-    return new globalThis.maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
+    return new LngLatBounds([minLng, minLat], [maxLng, maxLat]);
 }
 
 function createTrackingFeature(coordinates) {

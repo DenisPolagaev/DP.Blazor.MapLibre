@@ -14,6 +14,9 @@ using DP.Blazor.MapLibre.Models.LayerFeatures;
 using DP.Blazor.MapLibre.Models.Marker;
 using DP.Blazor.MapLibre.Models.Style;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
 using OneOf;
 using System.Collections.Concurrent;
@@ -32,6 +35,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// </summary>
     [Inject]
     private IJSRuntime JsRuntime { get; set; } = null!;
+
+    /// <summary>
+    /// Logger for non-fatal map and plugin failures. Defaults to a no-op logger when none is registered.
+    /// </summary>
+    [Inject]
+    private ILogger<MapLibre> Logger { get; set; } = NullLogger<MapLibre>.Instance;
 
     /// <summary>
     /// Represents the JavaScript module reference used to interact with the MapLibre map instance in the Blazor component.
@@ -155,7 +164,54 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     [Parameter]
     public EventCallback<MapErrorEvent> OnMapError { get; set; }
 
+    /// <summary>
+    /// When true, every plugin type registered with <c>AddMapLibrePlugin&lt;TPlugin&gt;()</c> is instantiated for this
+    /// map and registered automatically. Each map gets its own instances. Defaults to <c>false</c>.
+    /// </summary>
+    [Parameter]
+    public bool UseRegisteredPlugins { get; set; }
+
+    /// <summary>
+    /// Plugin instances to register with this map. Plugins supplied before the first render are initialized together
+    /// with the map. Plugins added later are initialized on the next parameter update. The map owns and disposes them.
+    /// </summary>
+    [Parameter]
+    public IEnumerable<IMapLibrePlugin>? Plugins { get; set; }
+
+    [Inject]
+    private IServiceProvider Services { get; set; } = null!;
+
+    private AsyncServiceScope? _pluginScope;
+    private bool _registeredPluginTypes;
+
     #endregion
+
+    /// <inheritdoc />
+    protected override async Task OnParametersSetAsync()
+    {
+        if (UseRegisteredPlugins && !_registeredPluginTypes)
+        {
+            _registeredPluginTypes = true;
+            var registry = Services.GetService<MapLibrePluginRegistry>();
+            if (registry is not null)
+            {
+                foreach (var pluginType in registry.PluginTypes)
+                {
+                    _pluginScope ??= Services.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+                    var plugin = (IMapLibrePlugin)_pluginScope.Value.ServiceProvider.GetRequiredService(pluginType);
+                    await RegisterPlugin(plugin);
+                }
+            }
+        }
+
+        if (Plugins is not null)
+        {
+            foreach (var plugin in Plugins.ToArray())
+            {
+                await RegisterPlugin(plugin);
+            }
+        }
+    }
 
     /// <summary>
     /// Invokes the OnStyleLoad event callback when the map style has been loaded.
@@ -241,10 +297,14 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             _mapObject = await InvokeMapJsAsync<IJSObjectReference>(
                 "initializeMap", Options, _dotNetObjectReference, _transformConstrainReference);
 
-            // Load the plugins after the map has been initialized
-            foreach (var plugin in _plugins)
+            // Load the plugins after the map has been initialized. Plugins registered while this loop runs
+            // (for example from a child component's OnAfterRender) are picked up as well.
+            var initialized = new HashSet<IMapLibrePlugin>();
+            IMapLibrePlugin? next;
+            while ((next = _plugins.FirstOrDefault(p => !initialized.Contains(p))) is not null)
             {
-                await InitializeRegisteredPluginAsync(plugin);
+                initialized.Add(next);
+                await InitializePluginOrRemoveAsync(next);
             }
 
             _mapInitialized = true;
@@ -252,17 +312,49 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Registers a plugin with this map. The map owns disposal of plugins registered through
-    /// this method; the application must not dispose them again after map teardown.
+    /// Initializes a plugin. A failing plugin is logged, detached from the registry and disposed, so one broken
+    /// plugin cannot stop the map or the other plugins from working.
     /// </summary>
-    public Task RegisterPlugin(IMapLibrePlugin plugin) =>
-        RegisterPluginAsync(plugin);
+    private async Task InitializePluginOrRemoveAsync(IMapLibrePlugin plugin)
+    {
+        try
+        {
+            await InitializeRegisteredPluginAsync(plugin);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Plugin '{Plugin}' failed to initialize on map '{ContainerId}' and was removed.",
+                plugin.GetType().Name, JsContainerId);
+            _plugins.Remove(plugin);
+            await DisposePluginSafelyAsync(plugin);
+        }
+    }
+
+    private async Task DisposePluginSafelyAsync(IMapLibrePlugin plugin)
+    {
+        try
+        {
+            if (plugin is IMapLibrePluginLifecycle lifecycle)
+            {
+                await lifecycle.DetachAsync();
+            }
+
+            await plugin.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Disposing plugin '{Plugin}' failed.", plugin.GetType().Name);
+        }
+    }
 
     /// <summary>
-    /// Registers a plugin with this map. Prefer this over <see cref="RegisterPlugin"/> when
-    /// flowing a <see cref="CancellationToken"/>. Ownership rules are identical.
+    /// Registers a plugin with this map. The map owns disposal of plugins registered through
+    /// this method; the application must not dispose them again after map teardown.
+    /// If the map is already initialized, the plugin is initialized before the returned task completes.
     /// </summary>
-    public async Task RegisterPluginAsync(IMapLibrePlugin plugin, CancellationToken cancellationToken = default)
+    /// <param name="plugin">The plugin instance.</param>
+    /// <param name="cancellationToken">Cancellation token for the initialization of an already rendered map.</param>
+    public async Task RegisterPlugin(IMapLibrePlugin plugin, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plugin);
 
@@ -271,15 +363,31 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             return;
         }
 
+        if (plugin is MapLibrePluginBase pluginBase)
+        {
+            pluginBase.Logger = Logger;
+        }
+
         _plugins.Add(plugin);
 
         if (!_mapInitialized)
         {
+            // Initialized by OnAfterRenderAsync together with the rest of the map setup.
             return;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await InitializeRegisteredPluginAsync(plugin, cancellationToken);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await InitializeRegisteredPluginAsync(plugin, cancellationToken);
+        }
+        catch
+        {
+            // Roll back so a failed registration does not leave a half-initialized plugin in the registry.
+            _plugins.Remove(plugin);
+            await DisposePluginSafelyAsync(plugin);
+            throw;
+        }
     }
 
     /// <summary>
@@ -288,7 +396,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <param name="plugin">Plugin instance previously passed to <see cref="RegisterPlugin"/>.</param>
     /// <param name="dispose">When true (default), the map disposes the plugin after detach.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task UnregisterPluginAsync(
+    public async Task UnRegisterPlugin(
         IMapLibrePlugin plugin,
         bool dispose = true,
         CancellationToken cancellationToken = default)
@@ -321,7 +429,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
         catch (JSException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MapLibre] Remove plugin dispose failed: {ex.Message}");
+            Logger.LogWarning(ex, "Remove plugin dispose failed.");
         }
         catch (ObjectDisposedException)
         {
@@ -360,7 +468,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             }
             catch (JSException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing listener failed: {ex.Message}");
+                Logger.LogWarning(ex, "Disposing listener failed.");
             }
             catch (ObjectDisposedException)
             {
@@ -385,7 +493,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             }
             catch (JSException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing plugin failed: {ex.Message}");
+                Logger.LogWarning(ex, "Disposing plugin failed.");
             }
             catch (ObjectDisposedException)
             {
@@ -393,6 +501,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         _plugins.Clear();
+
+        if (_pluginScope is { } pluginScope)
+        {
+            _pluginScope = null;
+            await pluginScope.DisposeAsync();
+        }
 
         foreach (var marker in _markers.Values)
         {
@@ -405,7 +519,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             }
             catch (JSException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing marker failed: {ex.Message}");
+                Logger.LogWarning(ex, "Disposing marker failed.");
             }
             catch (ObjectDisposedException)
             {
@@ -425,7 +539,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             }
             catch (JSException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MapLibre] Disposing popup failed: {ex.Message}");
+                Logger.LogWarning(ex, "Disposing popup failed.");
             }
             catch (ObjectDisposedException)
             {
@@ -454,8 +568,22 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_jsModule is not null)
             {
-                await Remove();
+                try
+                {
+                    await Remove();
+                }
+                catch (JSException ex)
+                {
+                    // The map may already be gone on the JS side; the remaining resources must still be released.
+                    Logger.LogWarning(ex, "Removing map '{ContainerId}' failed during dispose.", JsContainerId);
+                }
+
                 await _jsModule.DisposeAsync();
+            }
+
+            if (_mapObject is not null)
+            {
+                await _mapObject.DisposeAsync();
             }
         }
         catch (JSDisconnectedException)
@@ -467,10 +595,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         {
             // JS module may already be disposed when parent and child both participate in teardown.
         }
-
-        _dotNetObjectReference?.Dispose();
-        _dotNetObjectReference = null!;
-        _mapInitialized = false;
+        finally
+        {
+            _dotNetObjectReference?.Dispose();
+            _dotNetObjectReference = null!;
+            _mapInitialized = false;
+        }
     }
 
     private async Task InitializeRegisteredPluginAsync(
@@ -561,12 +691,14 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         AddOnceListenerInternal<T>(eventName, handler, layerIds.Length > 0 ? layerIds : null, throttleMs);
 
     /// <summary>
-    /// Removes all event listeners registered on this map, optionally filtered by event name.
+    /// Removes the event listeners registered on this map, optionally filtered by event name.
+    /// Marker and popup listeners are not affected: remove them with <see cref="MapMarker.RemoveAsync"/>
+    /// or <see cref="MapPopup.RemoveAsync"/>.
     /// </summary>
     public async ValueTask RemoveAllListeners(string? eventName = null)
     {
         var toRemove = _listeners
-            .Where(pair => eventName is null || pair.Value.EventType == eventName)
+            .Where(pair => pair.Value.IsMapScoped && (eventName is null || pair.Value.EventType == eventName))
             .Select(pair => pair.Value)
             .ToList();
 
@@ -686,7 +818,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     /// <summary>
     /// Observes unresolved missing style images. In MapLibre GL JS v6+, calling <c>AddImage</c>
-    /// from this handler no longer resolves the in-flight request — use
+    /// from this handler no longer resolves the in-flight request вЂ” use
     /// <see cref="SetMissingStyleImageResolver"/> to supply images.
     /// </summary>
     public Task<Listener> OnStyleImageMissing(Action<MapStyleImageMissingEvent> handler) =>
@@ -983,118 +1115,126 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <summary>
     /// Adds a fullscreen control. Pass <see cref="FullscreenControlOptions"/> for <c>pseudo</c> / container.
     /// </summary>
-    public async ValueTask AddFullscreenControl(FullscreenControlOptions? options = null, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddFullscreenControl(FullscreenControlOptions? options = null, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addControl", ControlType.FullscreenControl.ToString(), position, options);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync(
+        return await InvokeMapJsAsync<IJSObjectReference>(
             "addControl", JsContainerId, ControlType.FullscreenControl.ToString(), position, options);
     }
 
     /// <summary>
     /// Adds a geolocate control to the given map container.
     /// </summary>
-    public async ValueTask AddGeolocateControl(GeolocateControlOptions options, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddGeolocateControl(GeolocateControlOptions options, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addGeolocateControl", options, position);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync("addGeolocateControl", JsContainerId, options, position);
+        return await InvokeMapJsAsync<IJSObjectReference>("addGeolocateControl", JsContainerId, options, position);
     }
 
     /// <summary>
     /// Adds a navigation control to the given map container.
     /// </summary>
-    public async ValueTask AddNavigationControl(NavigationControlOptions options, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddNavigationControl(NavigationControlOptions options, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addNavigationControl", options, position);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync("addNavigationControl", JsContainerId, options, position);
+        return await InvokeMapJsAsync<IJSObjectReference>("addNavigationControl", JsContainerId, options, position);
     }
 
     /// <summary>
     /// Adds a scale control to the given map container.
     /// </summary>
-    public async ValueTask AddScaleControl(ScaleControlOptions options, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddScaleControl(ScaleControlOptions options, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addScaleControl", options, position);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync("addScaleControl", JsContainerId, options, position);
+        return await InvokeMapJsAsync<IJSObjectReference>("addScaleControl", JsContainerId, options, position);
     }
 
     /// <summary>
     /// Adds an attribution control.
     /// </summary>
-    public async ValueTask AddAttributionControl(AttributionControlOptions? options = null, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddAttributionControl(AttributionControlOptions? options = null, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addControl", ControlType.AttributionControl.ToString(), position, options);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync(
+        return await InvokeMapJsAsync<IJSObjectReference>(
             "addControl", JsContainerId, ControlType.AttributionControl.ToString(), position, options);
     }
 
     /// <summary>
     /// Adds a MapLibre logo control.
     /// </summary>
-    public async ValueTask AddLogoControl(LogoControlOptions? options = null, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddLogoControl(LogoControlOptions? options = null, ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addControl", ControlType.LogoControl.ToString(), position, options);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync(
+        return await InvokeMapJsAsync<IJSObjectReference>(
             "addControl", JsContainerId, ControlType.LogoControl.ToString(), position, options);
     }
 
     /// <summary>
     /// Adds a terrain toggle control. Options match <see cref="TerrainSpecification"/>.
     /// </summary>
-    public async ValueTask AddTerrainControl(TerrainSpecification options, ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddTerrainControl(TerrainSpecification options, ControlPosition? position = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addControl", ControlType.TerrainControl.ToString(), position, options);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync(
+        return await InvokeMapJsAsync<IJSObjectReference>(
             "addControl", JsContainerId, ControlType.TerrainControl.ToString(), position, options);
     }
 
     /// <summary>
     /// Adds a globe / mercator projection toggle control.
     /// </summary>
-    public async ValueTask AddGlobeControl(ControlPosition? position = null)
+    /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
+    public async ValueTask<IJSObjectReference?> AddGlobeControl(ControlPosition? position = null)
     {
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("addControl", ControlType.GlobeControl.ToString(), position, null);
-            return;
+            return null;
         }
 
-        await InvokeMapJsVoidAsync(
+        return await InvokeMapJsAsync<IJSObjectReference>(
             "addControl", JsContainerId, ControlType.GlobeControl.ToString(), position, null);
     }
 
@@ -1268,29 +1408,6 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Updates tile URLs for an existing vector tile source without removing dependent layers.
-    /// </summary>
-    /// <param name="id">The vector source id.</param>
-    /// <param name="tiles">The new tile URL templates.</param>
-    [Obsolete("Use SetSourceTiles. This alias remains for bulk-transaction event compatibility.")]
-    public ValueTask SetVectorSourceTiles(string id, IReadOnlyList<string> tiles) =>
-        SetSourceTiles(id, tiles);
-
-    /// <summary>
-    /// Updates the TileJSON / style URL for an existing source that supports <c>setUrl</c>.
-    /// </summary>
-    public async ValueTask SetSourceUrl(string id, string url)
-    {
-        if (_bulkTransaction is not null)
-        {
-            _bulkTransaction.Add("setSourceUrl", id, url);
-            return;
-        }
-
-        await InvokeMapJsVoidAsync("setSourceUrl", JsContainerId, id, url);
-    }
-
-    /// <summary>
     /// Applies an incremental diff to an existing GeoJSON source and waits until processing completes.
     /// Requires every feature in the source to have a unique id (or <c>promoteId</c> on the source).
     /// </summary>
@@ -1308,15 +1425,21 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <inheritdoc cref="UpdateSourceData(string, GeoJsonSourceDiff)"/>
+    /// <remarks>
+    /// The token is checked before the update is queued or sent. Once the update has reached the map it is not
+    /// rolled back: MapLibre applies source diffs synchronously in the browser.
+    /// </remarks>
     public async ValueTask UpdateSourceDataAsync(string id, GeoJsonSourceDiff diff, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (_bulkTransaction is not null)
         {
             _bulkTransaction.Add("updateSourceData", id, diff);
             return;
         }
 
-        await InvokeMapJsVoidAsync("updateSourceData", cancellationToken, JsContainerId, id, diff);
+        await InvokeMapJsVoidAsync("updateSourceData", JsContainerId, id, diff);
     }
 
     /// <summary>
@@ -1507,7 +1630,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// Triggers the following events during the animation lifecycle: <c>movestart</c>, <c>move</c>, <c>moveend</c>,
     /// <c>zoomstart</c>, <c>zoom</c>, <c>zoomend</c>, <c>pitchstart</c>, <c>pitch</c>, <c>pitchend</c>, <c>rollstart</c>,
     /// <c>roll</c>, <c>rollend</c>, and <c>rotate</c>. The animation will be skipped and instead transition
-    /// immediately if the user’s operating system has the ‘reduced motion’ accessibility feature enabled, unless the
+    /// immediately if the userвЂ™s operating system has the вЂreduced motionвЂ™ accessibility feature enabled, unless the
     /// <paramref name="options"/> object includes <c>essential: true</c>.
     /// </remarks>
     /// <param name="options">Describes the animation destination and transition behavior. Includes camera and animation properties.</param>
@@ -2158,22 +2281,6 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await InvokeMapJsAsync<bool>("isStyleLoaded", JsContainerId);
 
     /// <summary>
-    /// Returns true if the map has completed loading and is not currently loading new data or style.
-    /// </summary>
-    public async ValueTask<bool> IsLoaded() =>
-        await InvokeMapJsAsync<bool>("loaded", JsContainerId);
-
-    /// <summary>
-    /// Refreshes tiles in a specified source.
-    /// </summary>
-    /// <param name="sourceId">The source ID whose tiles should be reloaded.</param>
-    public async ValueTask RefreshTiles(string sourceId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
-        await InvokeMapJsVoidAsync("refreshTiles", JsContainerId, sourceId);
-    }
-
-    /// <summary>
     /// Determines if the map is currently zooming.
     /// </summary>
     /// <returns>True if the map is zooming; otherwise, false.</returns>
@@ -2611,7 +2718,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Rotates and pitches the map so that north is up (0° bearing) and pitch and roll are 0°, with an animated transition.
+    /// Rotates and pitches the map so that north is up (0В° bearing) and pitch and roll are 0В°, with an animated transition.
     /// <br/>
     /// Triggers the following events: movestart, moveend, and rotate.
     /// </summary>
@@ -2621,7 +2728,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await InvokeMapJsVoidAsync("resetNorth", JsContainerId, options, eventData);
 
     /// <summary>
-    /// Resets the map’s north and pitch angles with an animated transition.
+    /// Resets the mapвЂ™s north and pitch angles with an animated transition.
     /// <br/>
     /// Triggers the following events: movestart, move, moveend, pitchstart, pitch, pitchend, rollstart, roll, rollend, and rotate.
     /// </summary>
@@ -2841,7 +2948,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <summary>
     /// Sets a zoom level for the map.
     /// </summary>
-    /// <param name="zoom">The desired zoom level (0–20).</param>
+    /// <param name="zoom">The desired zoom level (0вЂ“20).</param>
     /// <param name="eventData">Optional event data.</param>
     public async ValueTask SetZoom(double zoom, object? eventData = null) =>
         await InvokeMapJsVoidAsync("setZoom", JsContainerId, zoom, eventData);
@@ -3029,11 +3136,6 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public async ValueTask ZoomTo(double zoom, EaseToOptions? options = null, object? eventData = null)
     {
         await InvokeMapJsVoidAsync("zoomTo", JsContainerId, zoom, options, eventData);
-    }
-
-    public async Task CreatePopup(Popup popup, PopupOptions options)
-    {
-        await AddPopup(options, popup.Coordinates, new PopupContent { Html = popup.Content });
     }
 
     /// <summary>
@@ -3343,6 +3445,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     private async Task<Listener> AddMarkerListenerInternal(Guid markerId, string eventName, Delegate handler)
     {
         var callback = new CallbackHandler(_jsModule, string.Empty, eventName, handler, typeof(MapMarkerEvent), "markerOff");
+        callback.IsMapScoped = false;
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("markerOn", markerId.ToString(), eventName, reference);
         callback.Attach(reference, listenerId, id => _listeners.TryRemove(id, out _));
@@ -3353,6 +3456,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     private async Task<Listener> AddPopupListenerInternal(Guid popupId, string eventName, Delegate handler)
     {
         var callback = new CallbackHandler(_jsModule, string.Empty, eventName, handler, typeof(MapMarkerEvent), "popupOff");
+        callback.IsMapScoped = false;
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("popupOn", popupId.ToString(), eventName, reference);
         callback.Attach(reference, listenerId, id => _listeners.TryRemove(id, out _));
@@ -3386,9 +3490,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     #region Bulk Transaction
 
     /// <summary>
-    /// Starts a bulk transaction to batch multiple operations together.
-    /// There can only be one bulk transaction in progress at a time.
+    /// Starts an explicit bulk transaction. Map mutations issued until <see cref="Commit"/> are collected and
+    /// applied in call order, with idempotent updates coalesced into one JavaScript round-trip per segment.
     /// </summary>
+    /// <remarks>
+    /// Mutations are deferred: read methods (<c>Get*</c>, <c>Query*</c>, <c>Is*</c>) inside the transaction
+    /// return the state from before the transaction started.
+    /// </remarks>
     /// <exception cref="InvalidOperationException"> If a bulk transaction is already in progress. </exception>
     public void StartTransaction()
     {
@@ -3398,11 +3506,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         _explicitTransaction = true;
+        _transactionSteps.Clear();
         _bulkTransaction ??= new BulkTransaction();
     }
 
     /// <summary>
-    /// Commits the bulk transaction, applying all enqueued operations to the map.
+    /// Commits the bulk transaction, applying all enqueued operations to the map. If an operation fails, the
+    /// remaining operations still run and the failure is rethrown afterwards.
     /// </summary>
     /// <exception cref="InvalidOperationException">If no bulk transaction is in progress. </exception>
     public async ValueTask Commit()
@@ -3413,16 +3523,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         _explicitTransaction = false;
-        if (_bulkTransaction is null || _bulkTransaction.Transactions.Count == 0)
-        {
-            _bulkTransaction = null;
-            return;
-        }
-
-        BulkTransactionCoalescer.Coalesce(_bulkTransaction);
-        var batch = _bulkTransaction;
-        _bulkTransaction = null;
-        await _jsModule.InvokeVoidAsync("executeTransaction", JsContainerId, batch.Transactions);
+        await CommitExplicitTransactionAsync();
     }
 
     #endregion

@@ -35,7 +35,7 @@ The JS module is loaded by the component (`prepareMapLibreGl`). Do not add a cla
 @code {
     private readonly MapOptions _options = new()
     {
-        // Style defaults to MapStyles.OpenStreetMap
+        // Style defaults to MapStyle.OpenStreetMap.Standard.ToStylePayload()
         Center = new LngLat(37.618423, 55.751244),
         Zoom = 9,
     };

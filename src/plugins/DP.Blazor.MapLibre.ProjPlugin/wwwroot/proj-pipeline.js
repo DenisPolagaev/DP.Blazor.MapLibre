@@ -19,6 +19,7 @@ const MERC_MAX = Math.PI * EARTH_RADIUS; // 20037508.342789244
 const TILE_EXTENT = 4096;
 const DEG = 180 / Math.PI;
 const RAD = Math.PI / 180;
+const DEFAULT_MAX_INPUT_TILES = 64;
 
 let contextPromise = null;
 
@@ -71,7 +72,9 @@ function inverseMercator(x, y) {
     return [x / EARTH_RADIUS * DEG, (2 * Math.atan(Math.exp(y / EARTH_RADIUS)) - Math.PI / 2) * DEG];
 }
 
-export async function createProjection(crs, areaOfUse) {
+// polarHemisphere ("north" | "south", optional) limits the default sampling to one hemisphere so that a polar CRS is
+// framed by its own pole. It is ignored when areaOfUse is given.
+export async function createProjection(crs, areaOfUse, polarHemisphere = null) {
     const context = await getContext();
     const forwardOp = await proj.projCreateCrsToCrs({ context, source_crs: 'EPSG:4326', target_crs: crs });
     const inverseOp = await proj.projCreateCrsToCrs({ context, source_crs: crs, target_crs: 'EPSG:4326' });
@@ -89,7 +92,10 @@ export async function createProjection(crs, areaOfUse) {
             }
         }
     } else {
-        for (let latitude = -80; latitude <= 80; latitude += 10) {
+        const [minLatitude, maxLatitude] = polarHemisphere === 'north'
+            ? [0, 80]
+            : polarHemisphere === 'south' ? [-80, 0] : [-80, 80];
+        for (let latitude = minLatitude; latitude <= maxLatitude; latitude += 10) {
             for (let longitude = -180; longitude < 180; longitude += 10) {
                 samples.push([latitude, longitude]);
             }
@@ -505,21 +511,52 @@ function chooseInputZoom(west, east, south, north, outputZ) {
     return 0;
 }
 
-// `input` is either an array of XYZ tile URL templates, or `{ kind: 'pmtiles' }` (the archive
-// URL is derived from the requested output tile URL).
-export function createTileReprojector(projection, input) {
+// `input` is either an array of XYZ tile URL templates, or `{ kind: 'pmtiles' }` (the archive URL is derived from the
+// requested output tile URL). `options.sourceId` labels warnings and `options.maxInputTiles` caps the input tiles read
+// for one output tile (default 64). Only the first URL template is used; extra templates are reported.
+export function createTileReprojector(projection, input, options = {}) {
     const isPmtiles = !Array.isArray(input) && input?.kind === 'pmtiles';
     const templates = Array.isArray(input) ? input : (input?.templates ?? []);
+    const sourceId = options.sourceId ?? 'unnamed';
+    const maxInputTiles = options.maxInputTiles ?? DEFAULT_MAX_INPUT_TILES;
+    if (!isPmtiles) {
+        if (templates.length === 0) {
+            throw new Error(`Source "${sourceId}" has no tile URL templates to reproject.`);
+        }
+        if (templates.length > 1) {
+            console.warn(
+                `ProjPlugin: source "${sourceId}" has ${templates.length} tile URL templates; only the first `
+                + `("${templates[0]}") is reprojected.`);
+        }
+    }
     const inputCache = new Map();
     const pmtilesCache = new Map();
     const MAX_INPUT_CACHE = 256;
 
-    async function fetchTile(url) {
+    // 204 and 404 mean "no tile here" (sparse tilesets) and yield an empty buffer. Other HTTP errors and network
+    // failures reject. Rejections are not cached, and MapLibre reports the output tile as errored.
+    async function loadInputTile(url) {
+        const response = await fetch(url);
+        if (response.status === 204 || response.status === 404) {
+            return new ArrayBuffer(0);
+        }
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} while loading input tile ${url}`);
+        }
+        return response.arrayBuffer();
+    }
+
+    function fetchTile(url) {
         if (inputCache.has(url)) {
             return inputCache.get(url);
         }
-        const promise = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : new ArrayBuffer(0)));
+        const promise = loadInputTile(url);
         inputCache.set(url, promise);
+        promise.catch(() => {
+            if (inputCache.get(url) === promise) {
+                inputCache.delete(url);
+            }
+        });
         if (inputCache.size > MAX_INPUT_CACHE) {
             inputCache.delete(inputCache.keys().next().value);
         }
@@ -544,8 +581,10 @@ export function createTileReprojector(projection, input) {
     }
 
     return async function reprojectTile(url) {
+        // z/x/y are read from the end of the URL, after MapLibre filled the placeholders. Earlier digit runs
+        // (dates, ports, archive names) must not be mistaken for the tile coordinates.
         const clean = url.replace(/^[a-z0-9_-]+:\/\//i, '');
-        const match = clean.match(/(\d+)\/(\d+)\/(\d+)/);
+        const match = clean.match(/(\d+)\/(\d+)\/(\d+)(?:\.[A-Za-z0-9]+)?(?:\?.*)?$/);
         if (!match) {
             throw new Error(`Cannot parse tile coordinates from ${url}`);
         }
@@ -604,22 +643,23 @@ export function createTileReprojector(projection, input) {
         const y1 = Math.max(0, Math.min(world - 1, Math.floor(latToTileY(south, inputZoom))));
 
         const collected = new Map();
-        const maxTiles = 64;
+        const candidateCount = (y1 - y0 + 1) * xColumns.length;
+        if (candidateCount > maxInputTiles) {
+            console.warn(
+                `ProjPlugin: source "${sourceId}" tile ${z}/${x}/${y} needs ${candidateCount} input tiles but `
+                + `maxInputTiles is ${maxInputTiles}; the output tile is incomplete. Raise maxInputTiles to include it.`);
+        }
         let tilesFetched = 0;
         let fragmentSeq = 0;
 
-        for (let yy = y0; yy <= y1 && tilesFetched < maxTiles; yy++) {
+        for (let yy = y0; yy <= y1 && tilesFetched < maxInputTiles; yy++) {
             for (const xx of xColumns) {
-                if (tilesFetched >= maxTiles) {
+                if (tilesFetched >= maxInputTiles) {
                     break;
                 }
                 tilesFetched++;
-                let buffer;
-                try {
-                    buffer = await fetchInput(inputZoom, xx, yy, archive);
-                } catch {
-                    continue;
-                }
+                // Fetch errors propagate: the output tile fails and MapLibre emits an error event.
+                const buffer = await fetchInput(inputZoom, xx, yy, archive);
                 if (!buffer || buffer.byteLength === 0) {
                     continue;
                 }
@@ -627,7 +667,10 @@ export function createTileReprojector(projection, input) {
                 let tile;
                 try {
                     tile = new VectorTile(new Pbf(new Uint8Array(buffer)));
-                } catch {
+                } catch (error) {
+                    console.warn(
+                        `ProjPlugin: source "${sourceId}" input tile ${inputZoom}/${xx}/${yy} could not be decoded `
+                        + `and was skipped: ${error.message}`);
                     continue;
                 }
 

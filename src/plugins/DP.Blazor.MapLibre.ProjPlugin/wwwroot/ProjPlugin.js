@@ -1,11 +1,24 @@
 // DP.Blazor.MapLibre.ProjPlugin
 //
-// Any-projection support for MapLibre GL JS on top of a self-contained, main-thread
-// proj-wasm pipeline (see proj-pipeline.js). No maplibre-proj / backproj / Web Workers.
+// Any-projection support for MapLibre GL JS on top of the main-thread proj-wasm pipeline in proj-pipeline.js.
+// There are no Web Workers and no maplibre-proj / backproj.
 //
-// All vendored modules are resolved through a page import map registered on first use.
+// State ownership:
+// - Process-wide (module scope): the proj-wasm instance (inside proj-pipeline.js), the import map flag, the
+//   projection cache, the transformer registry and the protocol name sequence. MapLibre's protocol registry is
+//   process-wide, so protocol names must be unique per document.
+// - Per map (getMapState): protocol names with the generation that registered them, source protocols, the
+//   transformer ids the map owns, and the queue that serializes style changes.
+//
+// Entry points that act on a map take the map as an optional trailing argument. The Blazor plugin always passes
+// it. Without it, the map from the last initialize() call is used; that fallback exists for standalone callers
+// such as the browser test harness.
 
-const coreModulePath = '_content/DP.Blazor.MapLibre/MapLibre.razor.js';
+import { getMapState, peekMapState, deleteMapState } from '../DP.Blazor.MapLibre/PluginRuntime.js';
+
+const STATE_KEY = 'ProjPlugin';
+const DEFAULT_MAX_INPUT_TILES = 64;
+const POLAR_HEMISPHERES = ['north', 'south'];
 const vendorRoot = '_content/ProjPlugin/vendor/';
 
 function contentUrl(relativePath) {
@@ -55,119 +68,225 @@ function hostProvidesImportMap() {
     return [...document.querySelectorAll('script[type="importmap"]')].some((script) => {
         try {
             return !!JSON.parse(script.textContent || '{}')?.imports?.['proj-wasm'];
-        } catch {
+        } catch (error) {
+            console.warn(`ProjPlugin: ignoring an invalid import map in the page: ${error.message}`);
             return false;
         }
     });
 }
 
+// ----- import map -----------------------------------------------------------------
+
+let importMapInstalled = false;
+
+// import.meta.resolve applies the document's import maps and throws for an unmapped bare specifier.
+// Returns null when the browser has no import.meta.resolve, so the result cannot be verified.
+function importMapResolves() {
+    if (typeof import.meta.resolve !== 'function') {
+        return null;
+    }
+
+    try {
+        import.meta.resolve('proj-wasm');
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Adds the vendored module entries unless the host already declares them. Browsers read import maps only before
+// the first module loads, so an entry added here can be ignored; that case is reported with console.warn.
 function installImportMap() {
-    if (globalThis.__blazorMapLibreProjImportMapInstalled) {
+    if (importMapInstalled) {
+        return;
+    }
+    importMapInstalled = true;
+
+    if (hostProvidesImportMap()) {
         return;
     }
 
-    if (!hostProvidesImportMap()) {
-        const map = buildImportMap();
-        const existing = document.querySelector('script[type="importmap"]');
-        if (existing) {
-            let parsed = {};
-            try {
-                parsed = JSON.parse(existing.textContent || '{}') || {};
-            } catch {
-                parsed = {};
-            }
-            parsed.imports = { ...(parsed.imports ?? {}), ...map.imports };
-            existing.textContent = JSON.stringify(parsed);
+    const map = buildImportMap();
+    const existing = document.querySelector('script[type="importmap"]');
+    if (existing) {
+        let parsed = {};
+        try {
+            parsed = JSON.parse(existing.textContent || '{}') || {};
+        } catch (error) {
+            console.warn(`ProjPlugin: the page's existing import map is not valid JSON and was replaced: ${error.message}`);
         }
-
-        const script = document.createElement('script');
-        script.type = 'importmap';
-        script.textContent = JSON.stringify(map);
-        document.head.appendChild(script);
+        parsed.imports = { ...(parsed.imports ?? {}), ...map.imports };
+        existing.textContent = JSON.stringify(parsed);
     }
 
-    globalThis.__blazorMapLibreProjImportMapInstalled = true;
-}
+    const script = document.createElement('script');
+    script.type = 'importmap';
+    script.textContent = JSON.stringify(map);
+    document.head.appendChild(script);
 
-async function ensureMapLibreGlobal() {
-    if (globalThis.maplibregl?.Map) {
-        return;
-    }
-
-    const mapLibre = await import(contentUrl(coreModulePath));
-    await mapLibre.prepareMapLibreGl();
-    if (!globalThis.maplibregl?.Map) {
-        throw new Error('MapLibre GL JS failed to load');
+    const resolves = importMapResolves();
+    if (resolves !== true) {
+        const outcome = resolves === false ? 'did not honour them' : 'cannot be verified';
+        console.warn(
+            `ProjPlugin: the vendored module entries were added at runtime and this browser ${outcome}. `
+            + 'Browsers read import maps only before the first module loads. Copy the entries from '
+            + 'GetImportMapAsync() into a static <script type="importmap"> before Blazor starts.');
     }
 }
 
-const MAX_TILE_WORKERS = 1; // retained for compatibility; the pipeline is single-threaded
+// ----- MapLibre and pipeline loading ----------------------------------------------
 
-let mapObject = null;
+// The C# base class prepares globalThis.maplibregl before importing this module. The fixture for the browser tests
+// assigns it the same way.
+function requireMapLibre() {
+    const maplibre = globalThis.maplibregl;
+    if (typeof maplibre?.addProtocol !== 'function' || typeof maplibre?.removeProtocol !== 'function') {
+        throw new Error(
+            'ProjPlugin requires globalThis.maplibregl. MapLibre prepares it when the plugin is registered '
+            + 'with MapLibre.RegisterPlugin.');
+    }
+
+    return maplibre;
+}
+
 let pipelinePromise = null;
 
-export function initialize(map) {
-    mapObject = map;
-
-    const pending = globalThis.__blazorMapLibreProjPendingMapStyle;
-    if (map && pending) {
-        delete globalThis.__blazorMapLibreProjPendingMapStyle;
-        applyStyleToMap(pending.style);
-        if (pending.bounds && isUsableBounds(pending.bounds)) {
-            map.fitBounds(pending.bounds, pending.fitBoundsOptions);
-        }
-    }
-}
-
-async function loadPipeline() {
+function loadPipeline() {
+    requireMapLibre();
     if (!pipelinePromise) {
-        pipelinePromise = (async () => {
-            installImportMap();
-            await ensureMapLibreGlobal();
-            return import(contentUrl('_content/ProjPlugin/proj-pipeline.js'));
-        })();
+        pipelinePromise = Promise.resolve()
+            .then(() => {
+                installImportMap();
+                return import(contentUrl('_content/ProjPlugin/proj-pipeline.js'));
+            })
+            .catch((error) => {
+                // Clear the cache so a later call can retry after the host fixes the import map.
+                pipelinePromise = null;
+                throw new Error(
+                    `ProjPlugin could not load proj-pipeline.js: ${error.message}. If the message is `
+                    + '"Failed to resolve module specifier", add the entries from GetImportMapAsync() to a static '
+                    + '<script type="importmap"> before Blazor starts.',
+                    { cause: error });
+            });
     }
 
     return pipelinePromise;
 }
 
-function ensureMap() {
-    if (!mapObject) {
+// ----- per-map bookkeeping --------------------------------------------------------
+
+// Process-wide caches. Projections are pure functions of their inputs, so they are shared by all maps.
+const projectionCache = new Map(); // key -> Promise<projection>
+const transformers = new Map(); // transformer id -> { projection, crs, owner }
+let transformerSequence = 0;
+let protocolSequence = 0; // MapLibre protocol names are process-wide
+
+// Bookkeeping for calls that have no map at all (only possible through standalone use).
+const sharedState = createMapState();
+let lastMap = null;
+
+function createMapState() {
+    return {
+        protocols: new Map(), // protocol name -> generation that registered it
+        sourceProtocols: new Map(), // reprojectSource sourceId -> protocol name
+        transformerIds: new Set(),
+        generation: 0, // incremented by every apply
+        queue: Promise.resolve(), // serializes style changes for this map
+    };
+}
+
+function ownerOf(map) {
+    return map ?? lastMap;
+}
+
+function stateFor(map) {
+    const owner = ownerOf(map);
+    return owner ? getMapState(owner, STATE_KEY, createMapState) : sharedState;
+}
+
+function resolveMap(map) {
+    const owner = ownerOf(map);
+    if (!owner) {
         throw new Error('ProjPlugin is not initialized. Register it with the map first.');
     }
 
-    return mapObject;
+    return owner;
 }
 
-function applyStyleToMap(style) {
-    const map = mapObject ?? globalThis.maplibregl?.getMap?.();
-    if (map) {
-        map.setStyle(style);
-    } else {
-        globalThis.__blazorMapLibreProjPendingMapStyle = { style };
+function enqueue(state, task) {
+    const run = state.queue.then(task);
+    // The queue continues after a failure; the caller still receives the error through `run`.
+    state.queue = run.catch(() => {});
+    return run;
+}
+
+// ----- protocols ------------------------------------------------------------------
+
+function removeProtocol(state, name) {
+    state.protocols.delete(name);
+    for (const [sourceId, protocol] of state.sourceProtocols) {
+        if (protocol === name) {
+            state.sourceProtocols.delete(sourceId);
+        }
+    }
+
+    requireMapLibre().removeProtocol(name);
+}
+
+// Removes the protocols registered before `generation`, i.e. the handlers of the style that was just replaced.
+function removeProtocolsBefore(state, generation) {
+    for (const [name, created] of [...state.protocols]) {
+        if (created < generation) {
+            removeProtocol(state, name);
+        }
     }
 }
 
-// ----- projections / transformer handles ------------------------------------
-
-const projections = new Map();
-const transformers = new Map();
-let transformerSeq = 0;
-
-async function getProjection(crs, areaOfUse) {
-    const key = `${crs}|${Array.isArray(areaOfUse) ? areaOfUse.join(',') : ''}`;
-    if (!projections.has(key)) {
-        const pipeline = await loadPipeline();
-        projections.set(key, await pipeline.createProjection(crs, areaOfUse));
+function removeAllProtocols(state) {
+    for (const name of [...state.protocols.keys()]) {
+        removeProtocol(state, name);
     }
-
-    return projections.get(key);
 }
 
-function storeTransformer(projection, crs, preferredId) {
-    const id = preferredId ?? `proj-${++transformerSeq}`;
-    transformers.set(id, { projection, crs });
+// Registers a MapLibre protocol for one reprojected source. A non-null sourceKey makes a later call with the same key
+// replace the earlier handler instead of accumulating handlers.
+function registerSourceProtocol(state, generation, label, sourceKey, reprojectTile) {
+    if (sourceKey != null) {
+        const previous = state.sourceProtocols.get(sourceKey);
+        if (previous) {
+            removeProtocol(state, previous);
+        }
+    }
+
+    const name = `reproj-${sanitize(label)}_${++protocolSequence}`;
+    requireMapLibre().addProtocol(name, async (params) => ({ data: await reprojectTile(params.url) }));
+    state.protocols.set(name, generation);
+    if (sourceKey != null) {
+        state.sourceProtocols.set(sourceKey, name);
+    }
+
+    return name;
+}
+
+// ----- transformers and projections -----------------------------------------------
+
+function storeTransformer(state, projection, crs, preferredId) {
+    const id = preferredId ?? `proj-${++transformerSequence}`;
+    transformers.get(id)?.owner.transformerIds.delete(id);
+    transformers.set(id, { projection, crs, owner: state });
+    state.transformerIds.add(id);
     return id;
+}
+
+function releaseTransformerEntry(id) {
+    const entry = transformers.get(id);
+    if (!entry) {
+        return false;
+    }
+
+    transformers.delete(id);
+    entry.owner.transformerIds.delete(id);
+    return true;
 }
 
 function getTransformerEntry(transformerId) {
@@ -179,18 +298,83 @@ function getTransformerEntry(transformerId) {
     return entry;
 }
 
-// ----- style reprojection ----------------------------------------------------
+function getProjection(crs, areaOfUse, polarHemisphere) {
+    const key = `${crs}|${areaOfUse ? areaOfUse.join(',') : ''}|${polarHemisphere ?? ''}`;
+    if (!projectionCache.has(key)) {
+        const pending = loadPipeline().then((pipeline) => pipeline.createProjection(crs, areaOfUse, polarHemisphere));
+        projectionCache.set(key, pending);
+        // A failed derivation is not cached, so a corrected CRS or area is derived again.
+        pending.catch(() => {
+            if (projectionCache.get(key) === pending) {
+                projectionCache.delete(key);
+            }
+        });
+    }
+
+    return projectionCache.get(key);
+}
+
+// Reuses the projection of an existing transformer when its id is passed back with the same CRS.
+async function resolveProjection(args) {
+    const existing = args.transformerId ? transformers.get(args.transformerId) : undefined;
+    if (existing) {
+        if (existing.crs !== args.crs) {
+            throw new Error(
+                `ProjPlugin transformer '${args.transformerId}' was created for ${existing.crs}, not ${args.crs}.`);
+        }
+
+        return existing.projection;
+    }
+
+    return getProjection(args.crs, args.areaOfUse, args.polarHemisphere);
+}
+
+function readProjectionArgs(options) {
+    if (!options?.crs) {
+        throw new Error('A crs is required (for example "EPSG:5070").');
+    }
+
+    const maxInputTiles = options.maxInputTiles ?? DEFAULT_MAX_INPUT_TILES;
+    if (!Number.isInteger(maxInputTiles) || maxInputTiles < 1) {
+        throw new Error(`maxInputTiles must be a positive integer, got ${maxInputTiles}.`);
+    }
+
+    const polarHemisphere = options.polarHemisphere ?? null;
+    if (polarHemisphere !== null && !POLAR_HEMISPHERES.includes(polarHemisphere)) {
+        throw new Error(`polarHemisphere must be "north" or "south", got "${polarHemisphere}".`);
+    }
+
+    return {
+        crs: options.crs,
+        areaOfUse: Array.isArray(options.areaOfUse) ? options.areaOfUse : null,
+        polarHemisphere,
+        maxInputTiles,
+        transformerId: options.transformerId ?? null,
+    };
+}
+
+// ----- style reprojection ---------------------------------------------------------
 
 const rasterSourceTypes = new Set(['raster', 'raster-dem', 'image', 'video', 'canvas']);
 
+function warnSkippedSource(sourceId, reason) {
+    console.warn(`ProjPlugin: skipped source "${sourceId}" and its layers: ${reason}.`);
+}
+
+// Returns a copy of the style in which vector sources have explicit tile URLs (TileJSON and pmtiles archives are
+// expanded). Sources that cannot be reprojected are removed together with their layers; every removal is logged.
 async function prepareStyle(rawStyle) {
     const style = JSON.parse(JSON.stringify(rawStyle));
     const sources = style.sources ?? (style.sources = {});
     const dropped = new Set();
+    const drop = (id, reason) => {
+        warnSkippedSource(id, reason);
+        dropped.add(id);
+    };
 
     for (const [id, source] of Object.entries(sources)) {
         if (rasterSourceTypes.has(source?.type)) {
-            dropped.add(id);
+            drop(id, `"${source.type}" sources cannot be reprojected`);
             continue;
         }
 
@@ -213,32 +397,36 @@ async function prepareStyle(rawStyle) {
 
         if (source.url && !Array.isArray(source.tiles)) {
             if (!/^(https?|data|blob):/i.test(source.url)) {
-                dropped.add(id);
+                drop(id, `unsupported TileJSON url "${source.url}"`);
                 continue;
             }
 
             try {
                 const response = await fetch(source.url);
-                if (response.ok) {
-                    const tilejson = await response.json();
-                    if (Array.isArray(tilejson.tiles) && tilejson.tiles.length > 0) {
-                        source.tiles = tilejson.tiles;
-                    }
-                    for (const key of ['minzoom', 'maxzoom', 'bounds', 'attribution', 'scheme']) {
-                        if (source[key] === undefined && tilejson[key] !== undefined) {
-                            source[key] = tilejson[key];
-                        }
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const tilejson = await response.json();
+                if (Array.isArray(tilejson.tiles) && tilejson.tiles.length > 0) {
+                    source.tiles = tilejson.tiles;
+                }
+                for (const key of ['minzoom', 'maxzoom', 'bounds', 'attribution', 'scheme']) {
+                    if (source[key] === undefined && tilejson[key] !== undefined) {
+                        source[key] = tilejson[key];
                     }
                 }
-            } catch {
-                // ignore, handled by the tiles check below
+            } catch (error) {
+                // Logged here; the source is then dropped below because it has no tiles.
+                console.warn(`ProjPlugin: TileJSON for source "${id}" could not be loaded from ${source.url}: ${error.message}`);
             }
             delete source.url;
         }
 
         const tiles = Array.isArray(source.tiles) ? source.tiles : [];
-        if (tiles.length === 0 || !tiles.some((url) => /^https?:/i.test(url))) {
-            dropped.add(id);
+        if (tiles.length === 0) {
+            drop(id, 'it has no tiles (vector sources need tiles or a TileJSON url)');
+        } else if (!tiles.some((url) => /^https?:/i.test(url))) {
+            drop(id, 'none of its tile URLs is http(s); a source that was already reprojected cannot be reprojected again');
         }
     }
 
@@ -253,40 +441,78 @@ async function prepareStyle(rawStyle) {
     return style;
 }
 
-const protocolSeq = 0;
+// Rewrites one source object in place: GeoJSON coordinates are reprojected, vector tile URLs are routed through a
+// protocol handler. `label` names the protocol; `sourceKey` (optional) enables replacement on repeated calls.
+async function reprojectSourceObject(source, context) {
+    const { label, sourceKey, projection, pipeline, state, generation, maxInputTiles } = context;
 
-async function reprojectStyleInternal(style, crs, transformerId, areaOfUse) {
-    const pipeline = await loadPipeline();
-    const projection = await getProjection(crs, areaOfUse);
-    const prepared = await prepareStyle(style);
-    const sources = prepared.sources ?? {};
-
-    for (const [id, source] of Object.entries(sources)) {
-        if (source.type === 'geojson' && source.data && typeof source.data === 'object') {
-            source.data = await pipeline.reprojectGeoJson(source.data, projection);
-        } else if (source.type === 'vector' && (source.__pmtilesArchive || Array.isArray(source.tiles))) {
-            const protocolId = `reproj-${sanitize(id)}_${++globalThis.__blazorMapLibreProjProtocolSeq}`;
-            const isPmtiles = !!source.__pmtilesArchive;
-            const reprojectTile = pipeline.createTileReprojector(
-                projection,
-                isPmtiles ? { kind: 'pmtiles' } : [...source.tiles]);
-            globalThis.maplibregl.addProtocol(protocolId, (params) =>
-                reprojectTile(params.url).then((data) => ({ data })));
-            if (isPmtiles) {
-                source.tiles = [`${protocolId}://${source.__pmtilesArchive}/{z}/{x}/{y}`];
-                delete source.__pmtilesArchive;
-            } else {
-                source.tiles = source.tiles.map((tile) => `${protocolId}://${tile}`);
-            }
-        }
+    if (source.type === 'geojson' && source.data && typeof source.data === 'object') {
+        source.data = await pipeline.reprojectGeoJson(source.data, projection);
+        return source;
     }
 
-    prepared.projection = { type: 'mercator' };
-    const transformer = storeTransformer(projection, crs, transformerId);
-    return { style: prepared, projection, transformerId: transformer };
+    if (source.type !== 'vector' || !(source.__pmtilesArchive || Array.isArray(source.tiles))) {
+        return source;
+    }
+
+    const isPmtiles = !!source.__pmtilesArchive;
+    const reprojectTile = pipeline.createTileReprojector(
+        projection,
+        isPmtiles ? { kind: 'pmtiles' } : [...source.tiles],
+        { sourceId: label, maxInputTiles });
+    const protocol = registerSourceProtocol(state, generation, label, sourceKey, reprojectTile);
+
+    if (isPmtiles) {
+        source.tiles = [`${protocol}://${source.__pmtilesArchive}/{z}/{x}/{y}`];
+        delete source.__pmtilesArchive;
+    } else {
+        source.tiles = source.tiles.map((tile) => `${protocol}://${tile}`);
+    }
+
+    return source;
 }
 
-globalThis.__blazorMapLibreProjProtocolSeq ??= 0;
+// Reprojects a style document. Protocols are registered with `generation`; the caller removes older ones once the
+// new style is on the map.
+async function reprojectStyleCore(options, state, generation) {
+    const args = readProjectionArgs(options);
+    if (!options.style) {
+        throw new Error('reprojectStyle requires a style.');
+    }
+
+    const pipeline = await loadPipeline();
+    const projection = await resolveProjection(args);
+    const style = await prepareStyle(options.style);
+
+    for (const [sourceId, source] of Object.entries(style.sources ?? {})) {
+        await reprojectSourceObject(source, {
+            label: sourceId,
+            sourceKey: null,
+            projection,
+            pipeline,
+            state,
+            generation,
+            maxInputTiles: args.maxInputTiles,
+        });
+    }
+
+    style.projection = { type: 'mercator' };
+    return {
+        style,
+        bounds: projection.bounds ?? [[-180, -85], [180, 85]],
+        transformerId: storeTransformer(state, projection, args.crs, args.transformerId),
+    };
+}
+
+function applyResult(map, state, generation, result, options) {
+    map.setStyle(result.style, options?.setStyleOptions);
+    removeProtocolsBefore(state, generation);
+    if (options?.fitBounds !== false && isUsableBounds(result.bounds)) {
+        map.fitBounds(result.bounds, options?.fitBoundsOptions);
+    }
+}
+
+// ----- DTOs -----------------------------------------------------------------------
 
 function toBoundsDto(bounds) {
     if (!bounds) {
@@ -303,7 +529,8 @@ function toResultDto(result) {
     return {
         style: result.style,
         bounds: toBoundsDto(result.bounds),
-        maxBounds: result.maxBounds ? toBoundsDto(result.maxBounds) : null,
+        // Not populated by the current pipeline.
+        maxBounds: null,
         transformerId: result.transformerId,
     };
 }
@@ -323,94 +550,78 @@ function sanitize(value) {
     return String(value).replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-async function reprojectCore(options) {
-    if (!options?.crs) {
-        throw new Error('reprojectStyle requires a crs (for example "EPSG:5070").');
-    }
-    if (!options.style) {
-        throw new Error('reprojectStyle requires a style.');
+// ----- exports --------------------------------------------------------------------
+
+// Records the map for the fallback used by calls without a map argument.
+export function initialize(map) {
+    if (!map) {
+        throw new Error('ProjPlugin.initialize requires a map.');
     }
 
-    const result = await reprojectStyleInternal(options.style, options.crs, options.transformerId, options.areaOfUse);
-    const projection = result.projection;
-
-    return {
-        style: result.style,
-        bounds: projection.bounds ?? [[-180, -85], [180, 85]],
-        maxBounds: null,
-        transformerId: result.transformerId,
-    };
+    lastMap = map;
+    stateFor(map);
 }
 
-export async function reprojectStyle(options) {
-    return toResultDto(await reprojectCore(options));
+// Pure: returns the reprojected style without changing the map. Protocols created here are released by the next
+// apply on this map, by detach, or by dispose.
+export function reprojectStyle(options, map) {
+    const state = stateFor(map);
+    return enqueue(state, async () => toResultDto(await reprojectStyleCore(options, state, state.generation)));
 }
 
-export async function applyReprojection(options) {
-    const result = await reprojectCore(options);
-    const map = ensureMap();
-
-    map.setStyle(result.style, options.setStyleOptions);
-    if (options.fitBounds !== false && isUsableBounds(result.bounds)) {
-        map.fitBounds(result.bounds, options.fitBoundsOptions);
-    }
-
-    return toResultDto(result);
+// Reprojects the style and sets it on the map. Protocols of the previous style are released after setStyle.
+export function applyReprojection(options, map) {
+    const target = resolveMap(map);
+    const state = stateFor(target);
+    return enqueue(state, async () => {
+        const generation = ++state.generation;
+        const result = await reprojectStyleCore(options, state, generation);
+        applyResult(target, state, generation, result, options);
+        return toResultDto(result);
+    });
 }
 
-export async function reprojectCurrentStyle(options) {
-    if (!options?.crs) {
-        throw new Error('reprojectCurrentStyle requires a crs.');
-    }
-
-    const map = ensureMap();
-    const result = await reprojectCore({ ...options, style: map.getStyle() });
-
-    map.setStyle(result.style, options.setStyleOptions);
-    if (options.fitBounds !== false && isUsableBounds(result.bounds)) {
-        map.fitBounds(result.bounds, options.fitBoundsOptions);
-    }
-
-    return toResultDto(result);
+// Reprojects the map's current style. The current style must not already be reprojected by this plugin.
+export function reprojectCurrentStyle(options, map) {
+    const target = resolveMap(map);
+    const state = stateFor(target);
+    return enqueue(state, async () => {
+        const generation = ++state.generation;
+        const result = await reprojectStyleCore({ ...options, style: target.getStyle() }, state, generation);
+        applyResult(target, state, generation, result, options);
+        return toResultDto(result);
+    });
 }
 
-export async function reprojectSource(options) {
-    if (!options?.crs) {
-        throw new Error('reprojectSource requires a crs.');
-    }
-    if (!options.source) {
+export function reprojectSource(options, map) {
+    if (!options?.source) {
         throw new Error('reprojectSource requires a source.');
     }
 
-    const pipeline = await loadPipeline();
-    const projection = await getProjection(options.crs, options.areaOfUse);
-    const source = JSON.parse(JSON.stringify(options.source));
-
-    if (source.type === 'geojson' && source.data && typeof source.data === 'object') {
-        source.data = await pipeline.reprojectGeoJson(source.data, projection);
-    } else if (source.type === 'vector' && (source.__pmtilesArchive || Array.isArray(source.tiles))) {
-        const protocolId = `reproj-${sanitize(options.sourceId ?? 'source')}_${++globalThis.__blazorMapLibreProjProtocolSeq}`;
-        const isPmtiles = !!source.__pmtilesArchive;
-        const reprojectTile = pipeline.createTileReprojector(
+    const args = readProjectionArgs(options);
+    const state = stateFor(map);
+    return enqueue(state, async () => {
+        const pipeline = await loadPipeline();
+        const projection = await resolveProjection(args);
+        const source = JSON.parse(JSON.stringify(options.source));
+        await reprojectSourceObject(source, {
+            label: options.sourceId ?? 'source',
+            sourceKey: options.sourceId ?? null,
             projection,
-            isPmtiles ? { kind: 'pmtiles' } : [...source.tiles]);
-        globalThis.maplibregl.addProtocol(protocolId, (params) =>
-            reprojectTile(params.url).then((data) => ({ data })));
-        if (isPmtiles) {
-            source.tiles = [`${protocolId}://${source.__pmtilesArchive}/{z}/{x}/{y}`];
-            delete source.__pmtilesArchive;
-        } else {
-            source.tiles = source.tiles.map((tile) => `${protocolId}://${tile}`);
-        }
-    }
+            pipeline,
+            state,
+            generation: state.generation,
+            maxInputTiles: args.maxInputTiles,
+        });
 
-    return {
-        source,
-        transformerId: storeTransformer(projection, options.crs, options.transformerId),
-    };
+        return {
+            source,
+            transformerId: storeTransformer(state, projection, args.crs, args.transformerId),
+        };
+    });
 }
 
-// ----- coordinates -----------------------------------------------------------
+// ----- coordinates ----------------------------------------------------------------
 
 export async function inverseTransformCoords(coordinates, transformerId) {
     const entry = getTransformerEntry(transformerId);
@@ -425,13 +636,60 @@ export async function transformPoint(coordinate, transformerId) {
     return { lng: fake[0][0], lat: fake[0][1] };
 }
 
-export async function shutdownTileWorkers() {
-    projections.clear();
-    transformers.clear();
+export function releaseTransformer(transformerId) {
+    return releaseTransformerEntry(transformerId);
 }
 
-export function releaseTransformer(transformerId) {
-    return transformers.delete(transformerId);
+// ----- lifecycle and diagnostics --------------------------------------------------
+
+// There are no worker threads: this clears the process-wide projection cache and
+// releases the transformers owned by the map. Without a map it also releases protocols that have no map.
+export function releaseProjectionResources(map) {
+    projectionCache.clear();
+
+    const owner = ownerOf(map);
+    if (!owner) {
+        removeAllProtocols(sharedState);
+    }
+
+    const state = owner ? peekMapState(owner, STATE_KEY) : sharedState;
+    for (const id of [...(state?.transformerIds ?? [])]) {
+        releaseTransformerEntry(id);
+    }
+}
+
+function releaseMapResources(map) {
+    const state = peekMapState(map, STATE_KEY);
+    if (!state) {
+        return;
+    }
+
+    removeAllProtocols(state);
+    for (const id of [...state.transformerIds]) {
+        releaseTransformerEntry(id);
+    }
+
+    deleteMapState(map, STATE_KEY);
+}
+
+// Releases the protocol handlers and transformers of the map. The reprojected style is NOT rolled back: it stays on
+// the map and its reprojected vector sources stop loading until the host sets a style again.
+export function detach(map) {
+    const owner = ownerOf(map);
+    if (owner) {
+        releaseMapResources(owner);
+    }
+}
+
+export function dispose(map) {
+    const owner = ownerOf(map);
+    if (owner) {
+        releaseMapResources(owner);
+    }
+
+    if (lastMap === owner) {
+        lastMap = null;
+    }
 }
 
 export function getImportMap() {
@@ -441,25 +699,3 @@ export function getImportMap() {
 export function getVendorManifest() {
     return fetch(contentUrl(`${vendorRoot}manifest.json`)).then((res) => (res.ok ? res.json() : null));
 }
-
-export function dispose() {
-    transformers.clear();
-    mapObject = null;
-}
-
-const pipelineApi = {
-    initialize,
-    reprojectStyle,
-    applyReprojection,
-    reprojectCurrentStyle,
-    reprojectSource,
-    inverseTransformCoords,
-    transformPoint,
-    shutdownTileWorkers,
-    releaseTransformer,
-    getImportMap,
-    getVendorManifest,
-    dispose,
-};
-
-globalThis.__blazorMapLibreProj = pipelineApi;

@@ -9,10 +9,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <EmbeddedResource Include="wwwroot\**\*" />
-    </ItemGroup>
-
-    <ItemGroup>
       <ProjectReference Include="..\..\src\DP.Blazor.MapLibre\DP.Blazor.MapLibre.csproj" />
     </ItemGroup>
 

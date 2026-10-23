@@ -241,13 +241,13 @@ test.describe('ProjPlugin', () => {
     expect(result.geoCoord[0]).not.toBeCloseTo(-77, 1);
   });
 
-  test('shutdownTileWorkers and getImportMap are wired', async ({ page }) => {
+  test('releaseProjectionResources and getImportMap are wired', async ({ page }) => {
     await openHarness(page);
 
     const result = await page.evaluate(async () => {
       const plugin = (window as any).__proj;
       const importMap = plugin.getImportMap();
-      await plugin.shutdownTileWorkers();
+      await plugin.releaseProjectionResources();
       return {
         entries: Object.keys(importMap.imports).length,
         projWasm: importMap.imports['proj-wasm'],

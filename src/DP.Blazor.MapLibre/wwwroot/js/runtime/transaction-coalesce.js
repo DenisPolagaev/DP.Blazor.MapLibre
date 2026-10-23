@@ -4,8 +4,6 @@ function coalesceKey(transaction) {
         case 'setSourceData':
         case 'setSourceDataAsJson':
         case 'setSourceTiles':
-        case 'setVectorSourceTiles':
-        case 'setSourceUrl':
             return `${transaction.event}:${String(data[0] ?? '')}`;
         case 'setPaintProperty':
         case 'setLayoutProperty':
