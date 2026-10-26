@@ -5,7 +5,7 @@ namespace DP.Blazor.MapLibre.Models.Marker;
 /// <summary>
 /// Enumeration for marker anchor positions.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum MarkerAnchor
 {
     [JsonStringEnumMemberName("center")]

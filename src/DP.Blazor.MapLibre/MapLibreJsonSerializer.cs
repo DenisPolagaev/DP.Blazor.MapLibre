@@ -8,11 +8,7 @@ namespace DP.Blazor.MapLibre;
 /// </summary>
 public static class MapLibreJsonSerializer
 {
-    public static JsonSerializerOptions Options { get; } = new()
-    {
-        AllowOutOfOrderMetadataProperties = true,
-        PropertyNameCaseInsensitive = true,
-    };
+    public static JsonSerializerOptions Options { get; } = CreateOptions();
 
     /// <summary>
     /// Serializer options for <see cref="Models.Request.TransformRequestResult"/>.
@@ -22,6 +18,20 @@ public static class MapLibreJsonSerializer
     {
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter() },
+        Converters = { new MapLibreJsonStringEnumConverter() },
     };
+
+    private static JsonSerializerOptions CreateOptions()
+    {
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+        };
+
+#if NET9_0_OR_GREATER
+        options.AllowOutOfOrderMetadataProperties = true;
+#endif
+
+        return options;
+    }
 }

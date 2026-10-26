@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace DP.Blazor.MapLibre.Models;
 
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum PositionAnchor
 {
     [JsonStringEnumMemberName("center")]

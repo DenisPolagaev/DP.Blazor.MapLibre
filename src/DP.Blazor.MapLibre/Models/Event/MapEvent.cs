@@ -7,7 +7,7 @@ namespace DP.Blazor.MapLibre.Models.Event;
 public class MapEvent
 {
     [JsonPropertyName("type")]
-    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
     public EventType Type { get; set; }
 
     [JsonPropertyName("originalEvent")]

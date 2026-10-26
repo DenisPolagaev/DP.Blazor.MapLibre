@@ -268,13 +268,22 @@ public class MapEventNameSyncTests
 
         var enumNames = typeof(EventType)
             .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Select(f => f.GetCustomAttribute<JsonStringEnumMemberNameAttribute>()?.Name
-                         ?? throw new InvalidOperationException($"EventType.{f.Name} has no wire name."))
+            .Select(WireName)
             .ToArray();
 
         constantNames.Should().OnlyHaveUniqueItems();
         enumNames.Should().OnlyHaveUniqueItems();
         constantNames.Should().BeEquivalentTo(enumNames);
+    }
+
+    private static string WireName(FieldInfo field)
+    {
+        // The net8 polyfill attribute is internal; read it by name so the test compiles on all TFMs.
+        var attribute = field.GetCustomAttributes(inherit: false)
+            .FirstOrDefault(item => item.GetType().Name == "JsonStringEnumMemberNameAttribute");
+
+        return attribute?.GetType().GetProperty("Name")?.GetValue(attribute) as string
+            ?? throw new InvalidOperationException($"EventType.{field.Name} has no wire name.");
     }
 }
 public class CameraAndQueryOptionsTests

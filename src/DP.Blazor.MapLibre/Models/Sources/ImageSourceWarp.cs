@@ -5,7 +5,7 @@ namespace DP.Blazor.MapLibre.Models.Sources;
 /// <summary>
 /// Warp mode for an image source (MapLibre <c>ImageSource.setWarp</c>, 6.5+).
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum ImageSourceWarp
 {
     /// <summary>Automatically picks the best warp for the current projection.</summary>

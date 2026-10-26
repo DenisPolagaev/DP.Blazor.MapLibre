@@ -5,7 +5,7 @@ namespace DP.Blazor.MapLibre.Models.Marker;
 /// <summary>
 /// Enumeration for marker alignment options.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum MarkerAlignment
 {
     [JsonStringEnumMemberName("auto")]

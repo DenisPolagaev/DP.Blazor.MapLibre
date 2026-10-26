@@ -6,7 +6,7 @@ namespace DP.Blazor.MapLibre.Models.Request;
 /// MapLibre resource types passed to <see cref="MapLibre.SetTransformRequest"/>.
 /// Matches <c>ResourceType</c> in maplibre-gl-js <c>request_manager.ts</c>.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum MapLibreResourceType
 {
     Glyphs,
@@ -22,7 +22,7 @@ public enum MapLibreResourceType
 /// <summary>
 /// Supported HTTP methods for MapLibre <c>RequestParameters</c>.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum RequestMethod
 {
     [JsonStringEnumMemberName("GET")]
@@ -39,7 +39,7 @@ public enum RequestMethod
 /// Supported credentials values for MapLibre <c>RequestParameters</c>.
 /// MapLibre only accepts <c>same-origin</c> or <c>include</c>.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum RequestCredentials
 {
     [JsonStringEnumMemberName("same-origin")]
@@ -52,7 +52,7 @@ public enum RequestCredentials
 /// <summary>
 /// Supported response body types for MapLibre <c>RequestParameters</c>.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum ResponseBodyType
 {
     [JsonStringEnumMemberName("string")]

@@ -1,6 +1,8 @@
 <Project>
-  <!-- Keep submodule package versions local; do not inherit parent CPM. -->
+
+  <!-- Isolate the submodule from the parent repository's central package management. -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
+
 </Project>

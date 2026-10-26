@@ -132,7 +132,7 @@ public class CircleLayerPaint
     public StyleTransition? CircleStrokeOpacityTransition { get; set; }
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(MapLibreJsonStringEnumConverter))]
 public enum MapViewport
 {
     [JsonStringEnumMemberName("map")]
