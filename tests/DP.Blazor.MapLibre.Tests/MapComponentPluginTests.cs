@@ -121,6 +121,81 @@ public class MapComponentPluginTests
         plugin.IsInitialized.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Parks the setup loop inside its initialization until the test releases it, and reports that it
+    /// is parked: that is the window between "map created" and "plugin queue drained".
+    /// </summary>
+    public sealed class GatedPlugin : MapLibrePluginBase
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        protected override async Task OnInitializeAsync(
+            IJSObjectReference map,
+            IJSRuntime runtime,
+            CancellationToken cancellationToken)
+        {
+            _entered.TrySetResult();
+            await _release.Task;
+        }
+
+        protected override ValueTask OnDetachAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        protected override ValueTask OnDisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>Signals that the setup loop reached it, i.e. that it has passed every plugin before it.</summary>
+    public sealed class SignalPlugin : MapLibrePluginBase
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        protected override Task OnInitializeAsync(
+            IJSObjectReference map,
+            IJSRuntime runtime,
+            CancellationToken cancellationToken)
+        {
+            _entered.TrySetResult();
+            return Task.CompletedTask;
+        }
+
+        protected override ValueTask OnDetachAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        protected override ValueTask OnDisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task RegisterPlugin_During_Setup_Initializes_Immediately()
+    {
+        using var context = CreateContext();
+        var gated = new GatedPlugin();
+        var sentinel = new SignalPlugin();
+        var cut = context.RenderComponent<MapLibre>(parameters => parameters
+            .Add(component => component.Plugins, new IMapLibrePlugin[] { gated, sentinel }));
+
+        // Every step below waits for a signal instead of a deadline: the loop reports entering the gated
+        // plugin, and the sentinel reports that the loop has passed it.
+        await gated.Entered;
+
+        var plugin = new RecordingPlugin();
+        await cut.Instance.RegisterPlugin(plugin);
+
+        // Registered inside the setup window: initialized by the registration itself, not later by the loop.
+        plugin.InitializeCount.Should().Be(1);
+        plugin.IsInitialized.Should().BeTrue();
+
+        gated.Release();
+        await sentinel.Entered;
+
+        // The loop has drained the registry by now and must not initialize the plugin a second time.
+        plugin.InitializeCount.Should().Be(1);
+    }
+
     [Fact]
     public async Task Dispose_Disposes_Registered_Plugins()
     {

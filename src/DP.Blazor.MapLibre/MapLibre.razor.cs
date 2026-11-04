@@ -172,8 +172,8 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     public bool UseRegisteredPlugins { get; set; }
 
     /// <summary>
-    /// Plugin instances to register with this map. Plugins supplied before the first render are initialized together
-    /// with the map. Plugins added later are initialized on the next parameter update. The map owns and disposes them.
+    /// Plugin instances to register with this map. Each one is initialized by its own registration, so a
+    /// plugin is ready when <see cref="RegisterPlugin"/> completes. The map owns and disposes them.
     /// </summary>
     [Parameter]
     public IEnumerable<IMapLibrePlugin>? Plugins { get; set; }
@@ -250,27 +250,45 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             throw new InvalidOperationException("Map JavaScript module is not initialized.");
         }
 
-        for (var attempt = 0; attempt < 100; attempt++)
+        // Deterministic handshake with the setup below: the map's "load" handler can run from a microtask
+        // before initializeMap()'s promise reaches this side, so wait for the map reference to be stored.
+        await _mapInstanceCreated.Task;
+
+        if (_mapObject is null)
         {
-            if (await InvokeMapJsAsync<bool>("hasMap", JsContainerId))
-            {
-                return;
-            }
-
-            await Task.Delay(10);
+            throw new InvalidOperationException(
+                $"Map instance for container '{JsContainerId}' is not registered. Ensure the map finished initializing before handling OnLoad.",
+                _mapInstanceError);
         }
-
-        throw new InvalidOperationException(
-            $"Map instance for container '{JsContainerId}' is not registered. Ensure the map finished initializing before handling OnLoad.");
     }
 
     #region Setup
 
     private bool _mapInitialized;
 
+    /// <summary>
+    /// Completes when the first render has either stored the JavaScript map reference or failed, so
+    /// <see cref="OnLoadCallback"/> can wait for it without polling.
+    /// </summary>
+    private readonly TaskCompletionSource _mapInstanceCreated = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Setup failure reported to callbacks that waited for the map reference.</summary>
+    private Exception? _mapInstanceError;
+
+    /// <summary>
+    /// Plugins whose initialization has already completed. It lets the setup loop skip plugins that a
+    /// caller registered and initialized while the loop was still running.
+    /// </summary>
+    private readonly HashSet<IMapLibrePlugin> _initializedPlugins = [];
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
         {
             _jsModule = await JsRuntime.InvokeAsync<IJSObjectReference>("import",
                 "./_content/DP.Blazor.MapLibre/MapLibre.razor.js");
@@ -297,17 +315,32 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             _mapObject = await InvokeMapJsAsync<IJSObjectReference>(
                 "initializeMap", Options, _dotNetObjectReference, _transformConstrainReference);
 
-            // Load the plugins after the map has been initialized. Plugins registered while this loop runs
-            // (for example from a child component's OnAfterRender) are picked up as well.
-            var initialized = new HashSet<IMapLibrePlugin>();
+            // The map reference is stored: release callbacks that were waiting for it (the "load" event can
+            // reach .NET before initializeMap's promise returns here).
+            _mapInstanceCreated.TrySetResult();
+
+            // Load the plugins after the map has been initialized. Plugins registered while this loop
+            // runs (for example from a child component's OnAfterRender) are initialized by that caller
+            // and skipped here through _initializedPlugins.
             IMapLibrePlugin? next;
-            while ((next = _plugins.FirstOrDefault(p => !initialized.Contains(p))) is not null)
+            while ((next = _plugins.FirstOrDefault(p => !_initializedPlugins.Contains(p))) is not null)
             {
-                initialized.Add(next);
+                _initializedPlugins.Add(next);
                 await InitializePluginOrRemoveAsync(next);
             }
 
             _mapInitialized = true;
+        }
+        catch (Exception exception)
+        {
+            if (_mapObject is null)
+            {
+                // The map reference was never stored: tell waiters instead of leaving them pending.
+                _mapInstanceError = exception;
+            }
+
+            _mapInstanceCreated.TrySetResult();
+            throw;
         }
     }
 
@@ -326,6 +359,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             Logger.LogError(ex, "Plugin '{Plugin}' failed to initialize on map '{ContainerId}' and was removed.",
                 plugin.GetType().Name, JsContainerId);
             _plugins.Remove(plugin);
+            _initializedPlugins.Remove(plugin);
             await DisposePluginSafelyAsync(plugin);
         }
     }
@@ -350,10 +384,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <summary>
     /// Registers a plugin with this map. The map owns disposal of plugins registered through
     /// this method; the application must not dispose them again after map teardown.
-    /// If the map is already initialized, the plugin is initialized before the returned task completes.
+    /// The returned task completes only after the plugin is initialized: a plugin registered while the
+    /// map is still setting itself up is initialized by this call as soon as the map instance exists,
+    /// so the caller can rely on the plugin's JavaScript side (for example add a <c>pmtiles://</c>
+    /// source right after registering the protocol plugin) when the task completes.
     /// </summary>
     /// <param name="plugin">The plugin instance.</param>
-    /// <param name="cancellationToken">Cancellation token for the initialization of an already rendered map.</param>
+    /// <param name="cancellationToken">Cancellation token for the plugin initialization.</param>
     public async Task RegisterPlugin(IMapLibrePlugin plugin, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plugin);
@@ -370,21 +407,32 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
         _plugins.Add(plugin);
 
-        if (!_mapInitialized)
+        if (!_mapInitialized && (_mapObject is null || _disposed))
         {
-            // Initialized by OnAfterRenderAsync together with the rest of the map setup.
+            // No map instance yet (or it is gone): OnAfterRenderAsync initializes the queued plugins
+            // together with the map setup.
+            return;
+        }
+
+        if (!_initializedPlugins.Add(plugin))
+        {
+            // Claimed by the setup loop, which is initializing it right now.
             return;
         }
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // The map instance exists: initialize now instead of waiting for the setup loop to reach
+            // this plugin. Otherwise a caller could add a source that needs the plugin's JavaScript side
+            // (MapLibre falls back to fetch for an unknown protocol and drops every request).
             await InitializeRegisteredPluginAsync(plugin, cancellationToken);
         }
         catch
         {
             // Roll back so a failed registration does not leave a half-initialized plugin in the registry.
             _plugins.Remove(plugin);
+            _initializedPlugins.Remove(plugin);
             await DisposePluginSafelyAsync(plugin);
             throw;
         }
@@ -407,6 +455,8 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         {
             return;
         }
+
+        _initializedPlugins.Remove(plugin);
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -501,6 +551,7 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         }
 
         _plugins.Clear();
+        _initializedPlugins.Clear();
 
         if (_pluginScope is { } pluginScope)
         {
@@ -600,6 +651,8 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             _dotNetObjectReference?.Dispose();
             _dotNetObjectReference = null!;
             _mapInitialized = false;
+            // Release a callback still waiting for the map reference; it reports the missing map itself.
+            _mapInstanceCreated.TrySetResult();
         }
     }
 
