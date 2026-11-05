@@ -5,7 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <PackageId>DP.Blazor.MapLibre.ProjPlugin</PackageId>
-        <Description>Any-projection plugin for DP.Blazor.MapLibre. Reprojects on the main thread with proj-wasm (PROJ 9) and @wcohen/wasmts, both vendored. Does not use maplibre-proj or backproj.</Description>
+        <Description>Any-projection plugin for DP.Blazor.MapLibre. Reprojects on the main thread with proj-wasm (PROJ 9), vendored. Does not use maplibre-proj or backproj.</Description>
         <StaticWebAssetBasePath>_content/ProjPlugin</StaticWebAssetBasePath>
         <RootNamespace>DP.Blazor.MapLibre.ProjPlugin</RootNamespace>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>

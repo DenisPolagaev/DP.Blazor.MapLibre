@@ -61,6 +61,13 @@ Limitation: the vendored PMTiles library does not separate an archive that is mi
 - [Documentation site](https://denispolagaev.github.io/DP.Blazor.MapLibre/)
 - [Plugin sources](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/tree/main/src/plugins/DP.Blazor.MapLibre.PmtilesPlugin)
 
+## Vendored PMTiles library
+
+`wwwroot/pmtiles/pmtiles.mjs` is a single-file ESM bundle of [`pmtiles`](https://github.com/protomaps/PMTiles) **4.5.0** (fflate inlined, esbuild). The version is recorded in the bundle banner.
+
+- Rebuild after bumping the pin: `node scripts/vendor-pmtiles.mjs` (optionally `node scripts/vendor-pmtiles.mjs <version>`), then update `THIRD-PARTY-NOTICES.txt` and re-run `../DP.Blazor.MapLibre.ProjPlugin/scripts/vendor-proj.mjs`, which copies this exact file into the ProjPlugin vendor tree.
+- 4.4.0+ understands `TileType.Mlt` (`tileTypeExt` → `.mlt`) and treats an empty MLT tile like an empty MVT tile, so `pmtiles://` archives holding MapLibre Tiles no longer fall into the raster branch. MapLibre GL JS still decides how to decode a tile from the style source: an MLT source needs `"encoding": "mlt"` (`mvt` is the default).
+
 ## License
 
 Targets .NET 8, 9, 10 and 11. The plugin code is released under the [Unlicense](https://github.com/DenisPolagaev/DP.Blazor.MapLibre/blob/main/UNLICENSE).

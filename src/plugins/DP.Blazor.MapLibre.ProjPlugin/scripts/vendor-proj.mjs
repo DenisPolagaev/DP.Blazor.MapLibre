@@ -19,28 +19,43 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outRoot = path.resolve(here, '..', 'wwwroot', 'vendor');
 
+/** Reads `pmtiles v4.5.0` from the bundle banner; falls back to "unknown". */
+function readVendoredVersion(bundlePath) {
+  try {
+    const firstLine = fs.readFileSync(bundlePath, 'utf8').split('\n', 1)[0];
+    return /pmtiles v(\d+\.\d+\.\d+)/.exec(firstLine)?.[1] ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 // Curated single-version closure. The upstream packages use overlapping semver ranges,
 // so versions are pinned here to keep one copy of each bare specifier.
+//
+// proj-wasm 0.1.0 is the first release whose dist/ holds only the PROJ files: it imports `ffi-wasm` as a bare
+// specifier, so ffi-wasm must be vendored and mapped in the import map (see wwwroot/ProjPlugin.js).
+// @wcohen/wasmts (JTS) and lru-cache belonged to the old Worker/JTS pipeline; nothing imports them any more,
+// so they are not vendored.
 const packages = [
-  ['proj-wasm', '0.1.0-alpha9', 'proj-wasm'],
-  ['ffi-wasm', '0.0.1', 'ffi-wasm'],
-  ['@wcohen/wasmts', '0.1.0-alpha6', 'wcohen-wasmts'],
+  ['proj-wasm', '0.1.0', 'proj-wasm'],
+  ['ffi-wasm', '0.0.3', 'ffi-wasm'],
   ['@wcohen/worker-router', '0.0.2', 'worker-router'],
   ['comlink', '4.4.2', 'comlink'],
-  ['squint-cljs', '0.14.208', 'squint-cljs'],
+  ['squint-cljs', '0.14.210', 'squint-cljs'],
   ['resource-tracker', '0.0.1', 'resource-tracker'],
-  ['lru-cache', '11.2.6', 'lru-cache'],
   ['@mapbox/vector-tile', '2.0.4', 'mapbox-vector-tile'],
   ['@mapbox/point-geometry', '1.1.0', 'mapbox-point-geometry'],
   ['pbf', '4.0.1', 'pbf'],
 ];
 
-// Single-file packages copied from the repository instead of downloaded. `version` is recorded as unknown
-// because neither the file nor the sibling notices carry a version.
+// Single-file packages copied from the repository instead of downloaded. The version is read from
+// the source file's banner (see DP.Blazor.MapLibre.PmtilesPlugin/scripts/vendor-pmtiles.mjs).
 const localPackages = [
   {
     name: 'pmtiles',
-    version: 'unknown',
+    version: readVendoredVersion(
+      path.resolve(here, '..', '..', 'DP.Blazor.MapLibre.PmtilesPlugin', 'wwwroot', 'pmtiles', 'pmtiles.mjs'),
+    ),
     dir: 'pmtiles',
     source: path.resolve(here, '..', '..', 'DP.Blazor.MapLibre.PmtilesPlugin', 'wwwroot', 'pmtiles'),
   },

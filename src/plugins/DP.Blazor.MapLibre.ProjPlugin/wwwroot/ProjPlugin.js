@@ -27,7 +27,7 @@ function contentUrl(relativePath) {
 
 const vendor = {
     projWasm: contentUrl(`${vendorRoot}proj-wasm/dist/proj.mjs`),
-    wasmts: contentUrl(`${vendorRoot}wcohen-wasmts/dist/wasmts.js`),
+    ffiWasm: contentUrl(`${vendorRoot}ffi-wasm/dist/ffi-wasm.mjs`),
     vectorTile: contentUrl(`${vendorRoot}mapbox-vector-tile/index.js`),
     pointGeometry: contentUrl(`${vendorRoot}mapbox-point-geometry/index.js`),
     pbf: contentUrl(`${vendorRoot}pbf/index.js`),
@@ -47,7 +47,7 @@ function buildImportMap() {
         imports: {
             'maplibre-gl': contentUrl('_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs'),
             'proj-wasm': vendor.projWasm,
-            '@wcohen/wasmts': vendor.wasmts,
+            'ffi-wasm': vendor.ffiWasm,
             '@mapbox/vector-tile': vendor.vectorTile,
             '@mapbox/point-geometry': vendor.pointGeometry,
             'pbf': vendor.pbf,

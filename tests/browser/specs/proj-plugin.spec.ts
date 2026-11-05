@@ -251,12 +251,12 @@ test.describe('ProjPlugin', () => {
       return {
         entries: Object.keys(importMap.imports).length,
         projWasm: importMap.imports['proj-wasm'],
-        wasmts: importMap.imports['@wcohen/wasmts'],
+        ffiWasm: importMap.imports['ffi-wasm'],
       };
     });
 
     expect(result.entries).toBeGreaterThan(10);
     expect(result.projWasm).toContain('_content/ProjPlugin/vendor/proj-wasm/');
-    expect(result.wasmts).toContain('_content/ProjPlugin/vendor/wcohen-wasmts/');
+    expect(result.ffiWasm).toContain('_content/ProjPlugin/vendor/ffi-wasm/');
   });
 });

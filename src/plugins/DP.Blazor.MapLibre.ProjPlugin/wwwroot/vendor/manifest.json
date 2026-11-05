@@ -1,23 +1,17 @@
 {
-  "generated": "2026-09-28T07:38:12.954Z",
+  "generated": "2026-11-05T09:10:05.610Z",
   "packages": [
     {
       "name": "proj-wasm",
-      "version": "0.1.0-alpha9",
+      "version": "0.1.0",
       "dir": "proj-wasm",
-      "files": 12
+      "files": 9
     },
     {
       "name": "ffi-wasm",
-      "version": "0.0.1",
+      "version": "0.0.3",
       "dir": "ffi-wasm",
-      "files": 16
-    },
-    {
-      "name": "@wcohen/wasmts",
-      "version": "0.1.0-alpha6",
-      "dir": "wcohen-wasmts",
-      "files": 8
+      "files": 14
     },
     {
       "name": "@wcohen/worker-router",
@@ -33,7 +27,7 @@
     },
     {
       "name": "squint-cljs",
-      "version": "0.14.208",
+      "version": "0.14.210",
       "dir": "squint-cljs",
       "files": 15
     },
@@ -42,12 +36,6 @@
       "version": "0.0.1",
       "dir": "resource-tracker",
       "files": 3
-    },
-    {
-      "name": "lru-cache",
-      "version": "11.2.6",
-      "dir": "lru-cache",
-      "files": 7
     },
     {
       "name": "@mapbox/vector-tile",
@@ -69,7 +57,7 @@
     },
     {
       "name": "pmtiles",
-      "version": "unknown",
+      "version": "4.5.0",
       "dir": "pmtiles",
       "files": 1
     }

@@ -7,7 +7,7 @@ namespace DP.Blazor.MapLibre.ProjPlugin;
 
 /// <summary>
 /// MapLibre plugin that renders a map in an arbitrary coordinate reference system (CRS). Reprojection runs on the
-/// browser main thread with the vendored <c>proj-wasm</c> (PROJ 9) and <c>@wcohen/wasmts</c> (JTS) runtime. The
+/// browser main thread with the vendored <c>proj-wasm</c> (PROJ 9) runtime. The
 /// plugin does not use <c>maplibre-proj</c> or <c>backproj</c>.
 /// </summary>
 /// <remarks>

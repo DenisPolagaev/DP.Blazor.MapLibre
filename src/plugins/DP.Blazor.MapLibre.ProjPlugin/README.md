@@ -1,16 +1,16 @@
 # DP.Blazor.MapLibre.ProjPlugin
 
-**Any-projection** plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre): render a map in any coordinate reference system (CRS) with [proj-wasm](https://www.npmjs.com/package/proj-wasm) (PROJ 9 compiled to WebAssembly) and [@wcohen/wasmts](https://www.npmjs.com/package/@wcohen/wasmts) (JTS).
+**Any-projection** plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre): render a map in any coordinate reference system (CRS) with [proj-wasm](https://www.npmjs.com/package/proj-wasm) (PROJ 9 compiled to WebAssembly).
 
 The plugin runs a self-contained reprojection pipeline on the browser main thread for GeoJSON and vector tiles. It has no Web Workers and does not use `maplibre-proj` or `backproj`.
 
-The vendored runtime lives under `_content/ProjPlugin/vendor` and is about 29.6 MB on disk (28.2 MiB):
+The vendored runtime lives under `_content/ProjPlugin/vendor` and is about 14.8 MB on disk (14.1 MiB):
 
 | Package | Size on disk | Notes |
 |---|---|---|
-| `proj-wasm` | 14.6 MB | includes `proj.db` (10.2 MB) and the PROJ module `proj-emscripten.wasm` (3.6 MB) |
-| `@wcohen/wasmts` | 14.2 MB | includes `wasmts.js.wasm` (13.9 MB) |
-| everything else | about 0.8 MB | JavaScript helpers |
+| `proj-wasm` | 14.2 MB | includes `proj.db` (10.1 MB) and the PROJ module `proj-emscripten.wasm` (3.5 MB) |
+| `ffi-wasm` | 0.1 MB | platform, dispatch, worker and WASM helpers that `proj-wasm` imports |
+| everything else | about 0.6 MB | JavaScript helpers |
 
 ## Install
 
@@ -74,7 +74,7 @@ The vendored modules are resolved through an import map. Browsers read an import
 {
   "imports": {
     "proj-wasm": "_content/ProjPlugin/vendor/proj-wasm/dist/proj.mjs",
-    "@wcohen/wasmts": "_content/ProjPlugin/vendor/wcohen-wasmts/dist/wasmts.js"
+    "ffi-wasm": "_content/ProjPlugin/vendor/ffi-wasm/dist/ffi-wasm.mjs"
   }
 }
 </script>

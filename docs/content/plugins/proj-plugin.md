@@ -111,14 +111,14 @@ var fake = await _proj.TransformPointAsync(new LngLat(-77.0, 38.9), _transformer
 
 ## Vector tiles
 
-Vector tile sources in the style are rewritten to a custom protocol handler automatically. The handler fetches the input Mercator tiles, reprojects them through a worker pool and returns reprojected PBF data. No extra configuration is required, but the vendored `@wcohen/wasmts` WebAssembly must be reachable (it is part of the package).
+Vector tile sources in the style are rewritten to a custom protocol handler automatically. The handler fetches the input Mercator tiles, reprojects them through a worker pool and returns reprojected PBF data. No extra configuration is required; the vendored `proj-wasm`/`ffi-wasm` runtime is part of the package.
 
 ## Browser support and import maps
 
-The vendored packages use bare ES module specifiers (`backproj`, `proj-wasm`, ...). On first use the plugin registers a page import map that resolves them to `_content/ProjPlugin/vendor/...`.
+The vendored packages use bare ES module specifiers (`proj-wasm`, `ffi-wasm`, ...). On first use the plugin registers a page import map that resolves them to `_content/ProjPlugin/vendor/...`.
 
 - Chromium-based browsers (Edge/Chrome 132+) allow the dynamically added import map and need no extra setup.
-- Firefox/Safari hosts should copy the entries from `GetImportMapAsync()` into a static `<script type="importmap">` **before** Blazor starts. The host can also provide its own import map containing a `backproj` entry, in which case the plugin leaves it untouched.
+- Firefox/Safari hosts should copy the entries from `GetImportMapAsync()` into a static `<script type="importmap">` **before** Blazor starts. The host can also provide its own import map containing a `proj-wasm` entry, in which case the plugin leaves it untouched.
 
 ## Diagnostics
 

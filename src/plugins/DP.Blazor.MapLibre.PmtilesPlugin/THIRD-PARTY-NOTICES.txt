@@ -5,16 +5,19 @@ This package vendors JavaScript from:
 
   pmtiles
   https://github.com/protomaps/PMTiles
-  Version:   not recorded in this repository. wwwroot/pmtiles/pmtiles.mjs is a
-             minified bundle without a version header; verify the source before
-             relying on a specific version.
+  Version:   4.5.0 (recorded in the banner of wwwroot/pmtiles/pmtiles.mjs).
+             The bundle is built from the npm package `pmtiles@4.5.0` with
+             esbuild (fflate inlined); rebuild it with
+             `node scripts/vendor-pmtiles.mjs` and update the version there and
+             in this file.
   Copyright: Copyright 2021 Protomaps LLC
   License:   BSD-3-Clause
 
-The vendored file wwwroot/pmtiles/pmtiles.mjs has no license header. The license
-above is taken from the LICENSE file of the upstream repository (the PMTiles
-specification itself is public domain / CC0; the BSD-3-Clause license applies to
-the reference implementations). The full license text follows.
+The vendored file is a minified esbuild bundle; the copyright notice and license
+are preserved in the bundle banner and in this file. The license below is taken
+from the LICENSE file of the upstream repository (the PMTiles specification
+itself is public domain / CC0; the BSD-3-Clause license applies to the reference
+implementations). The full license text follows.
 
 ---------------------------------------------------------------------------------
 
