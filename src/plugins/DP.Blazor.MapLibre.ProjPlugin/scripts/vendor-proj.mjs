@@ -8,6 +8,11 @@
 // DP.Blazor.MapLibre.PmtilesPlugin so that both plugins ship the same file. The output tree is served
 // as a static web asset under _content/ProjPlugin/vendor and wired up by ProjPlugin.js.
 //
+// There is no MVT dependency any more: the reprojection pipeline decodes and encodes MapLibre Tiles
+// with @maplibre/mlt. That package's dist/*.js uses extensionless relative specifiers (TypeScript's
+// "bundler" module resolution), which a browser cannot resolve, so its tree is normalized to
+// explicit .js specifiers after the download (see normalizeEsmSpecifiers).
+//
 // The output directory is deleted and rebuilt on every run.
 //
 // Behind a TLS-intercepting proxy, run with NODE_TLS_REJECT_UNAUTHORIZED=0.
@@ -43,10 +48,16 @@ const packages = [
   ['comlink', '4.4.2', 'comlink'],
   ['squint-cljs', '0.14.210', 'squint-cljs'],
   ['resource-tracker', '0.0.1', 'resource-tracker'],
-  ['@mapbox/vector-tile', '2.0.4', 'mapbox-vector-tile'],
+  // MapLibre Tile decode/encode (vector tile reprojection). Its only runtime dependency is
+  // @mapbox/point-geometry, which is vendored below.
+  ['@maplibre/mlt', '1.3.0', 'maplibre-mlt'],
   ['@mapbox/point-geometry', '1.1.0', 'mapbox-point-geometry'],
-  ['pbf', '4.0.1', 'pbf'],
 ];
+
+// Packages whose dist tree is TypeScript output with extensionless relative imports. Browsers do not
+// append a file extension to a module specifier, so "./mltDecoder" would 404; every such specifier is
+// rewritten to "./mltDecoder.js" (or "/index.js" for directory imports) before the tree is served.
+const normalizeSpecifiers = new Set(['maplibre-mlt']);
 
 // Single-file packages copied from the repository instead of downloaded. The version is read from
 // the source file's banner (see DP.Blazor.MapLibre.PmtilesPlugin/scripts/vendor-pmtiles.mjs).
@@ -103,14 +114,58 @@ async function downloadPackage(name, version, dest) {
   return { count, bytes };
 }
 
+function listJsFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listJsFiles(full));
+    else if (entry.name.endsWith('.js') || entry.name.endsWith('.mjs')) out.push(full);
+  }
+  return out;
+}
+
+// Rewrites extensionless relative module specifiers ("from './x'", 'import("./x")') to a path a
+// browser can fetch: "./x.js" when that file exists, "./x/index.js" when it is a directory.
+function normalizeEsmSpecifiers(dir, label) {
+  const specifier = /((?:from|import)\s*\(?\s*)(["'])(\.{1,2}\/[^"'\n]+)\2/g;
+  let files = 0;
+  let rewrites = 0;
+  for (const file of listJsFiles(dir)) {
+    const before = fs.readFileSync(file, 'utf8');
+    const after = before.replace(specifier, (match, prefix, quote, value) => {
+      if (/\.(js|mjs|cjs|json|wasm)$/i.test(value)) return match;
+      const target = path.resolve(path.dirname(file), value);
+      if (fs.existsSync(`${target}.js`)) {
+        rewrites++;
+        return `${prefix}${quote}${value}.js${quote}`;
+      }
+      if (fs.existsSync(path.join(target, 'index.js'))) {
+        rewrites++;
+        return `${prefix}${quote}${value}/index.js${quote}`;
+      }
+      return match;
+    });
+    if (after !== before) {
+      fs.writeFileSync(file, after);
+      files++;
+    }
+  }
+  console.log(`  normalized ESM specifiers in ${label}: ${rewrites} rewrite(s) across ${files} file(s)`);
+  return rewrites;
+}
+
 fs.rmSync(outRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
 
 const manifest = { generated: new Date().toISOString(), packages: [] };
 let totalBytes = 0;
 for (const [name, version, safe] of packages) {
-  const { count, bytes } = await downloadPackage(name, version, path.join(outRoot, safe));
+  const dest = path.join(outRoot, safe);
+  const { count, bytes } = await downloadPackage(name, version, dest);
   totalBytes += bytes;
+  if (normalizeSpecifiers.has(safe)) {
+    normalizeEsmSpecifiers(dest, `${name}@${version}`);
+  }
   manifest.packages.push({ name, version, dir: safe, files: count });
   console.log(`${name}@${version} -> vendor/${safe} (${count} files, ${(bytes / 1024 / 1024).toFixed(2)} MB)`);
 }

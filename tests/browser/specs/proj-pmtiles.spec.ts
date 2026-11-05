@@ -18,9 +18,8 @@ test('reads and reprojects a real PMTiles archive', async ({ page }) => {
     const plugin = (window as any).__proj;
     await plugin.reprojectStyle({ style: { version: 8, sources: {}, layers: [] }, crs: 'ESRI:54030' });
     const pipeline: any = await import('/_content/ProjPlugin/proj-pipeline.js');
+    const mlt: any = await import('@maplibre/mlt');
     const { PMTiles } = await import('pmtiles');
-    const { VectorTile } = await import('@mapbox/vector-tile');
-    const Pbf = (await import('pbf')).default;
 
     const pm: any = new PMTiles(archive);
     let header: any;
@@ -51,16 +50,20 @@ test('reads and reprojects a real PMTiles archive', async ({ page }) => {
       return { header: { maxZoom: header?.maxZoom, tileType: header?.tileType }, found: false };
     }
 
-    const tile = new VectorTile(new Pbf(new Uint8Array(source.data)));
-    const features = Object.keys(tile.layers).reduce((sum, name) => sum + tile.layers[name].length, 0);
+    const inputFeatures = mlt.decodeTile(new Uint8Array(source.data))
+      .reduce((sum: number, table: any) => sum + table.numFeatures, 0);
 
     // Reproject an output tile at the same zoom covering roughly the same area.
     const projection = await pipeline.createProjection(crs, null);
     const reprojectTile = pipeline.createTileReprojector(projection, { kind: 'pmtiles' });
     let reprojected = 0;
+    let reprojectedFeatures = 0;
     try {
       const bytes = await reprojectTile(`reproj://${archive}/${source.z}/${source.x}/${source.y}`);
       reprojected = bytes.byteLength;
+      reprojectedFeatures = bytes.byteLength > 0
+        ? mlt.decodeTile(bytes).reduce((sum: number, table: any) => sum + table.numFeatures, 0)
+        : 0;
     } catch (e: any) {
       reprojected = -1;
     }
@@ -68,13 +71,16 @@ test('reads and reprojects a real PMTiles archive', async ({ page }) => {
     return {
       header: { minZoom: header?.minZoom, maxZoom: header?.maxZoom, tileType: header?.tileType },
       source: { zxy: `${source.z}/${source.x}/${source.y}`, bytes: source.data.byteLength },
-      inputFeatures: features,
+      inputFeatures,
       reprojectedBytes: reprojected,
+      reprojectedFeatures,
     };
   }, { archive: archiveUrl, crs });
 
   console.log('PMTILES', JSON.stringify(out, null, 1));
   expect((out as any).headerError, JSON.stringify(out)).toBeFalsy();
   expect((out as any).found, JSON.stringify(out)).not.toBe(false);
+  // TileType 6 is MLT: the archive must not be a legacy MVT one.
+  expect((out as any).header.tileType, JSON.stringify(out)).toBe(6);
   expect((out as any).inputFeatures, JSON.stringify(out)).toBeGreaterThan(0);
 });

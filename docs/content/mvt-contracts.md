@@ -1,8 +1,9 @@
-# Backend MVT / REST tile contracts (Geoportal)
+# Backend MLT / REST tile contracts (Geoportal)
 
-Operational layers should expose:
+Operational layers expose MapLibre Tiles (MLT) — the Geoportal has no MVT path — and should provide:
 
-- **Versioned tile URL** — e.g. `/api/v1/.../tiles/{z}/{x}/{y}.mvt`
+- **Versioned tile URL** — e.g. `/api/v1/.../tiles/{z}/{x}/{y}.mlt`, served together with
+  `"encoding": "mlt"` on the style source (MapLibre defaults to `mvt`)
 - **`source-layer`** — stable name matching StyleConfig `sourceLayer`
 - **`promoteId`** — stable feature id property (default `id`) for `setFeatureState`
 - **Cache** — `ETag` / `Cache-Control` appropriate for tile churn

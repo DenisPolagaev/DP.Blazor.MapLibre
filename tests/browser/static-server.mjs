@@ -35,6 +35,7 @@ const mime = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.wasm': 'application/wasm',
+  '.mlt': 'application/octet-stream',
   '.db': 'application/octet-stream',
   '.ini': 'text/plain; charset=utf-8',
 };

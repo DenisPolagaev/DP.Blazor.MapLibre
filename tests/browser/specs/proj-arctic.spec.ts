@@ -17,9 +17,8 @@ test('all polar output tiles load with features', async ({ page }) => {
     const plugin = (window as any).__proj;
     await plugin.reprojectStyle({ style: { version: 8, sources: {}, layers: [] }, crs: 'ESRI:54030' });
     const pipeline: any = await import('/_content/ProjPlugin/proj-pipeline.js');
-    const { VectorTile } = await import('@mapbox/vector-tile');
-    const Pbf = (await import('pbf')).default;
-    const template = 'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf';
+    const mlt: any = await import('@maplibre/mlt');
+    const template = 'http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt';
 
     const out: any[] = [];
     for (const { crs, area } of items) {
@@ -31,11 +30,10 @@ test('all polar output tiles load with features', async ({ page }) => {
         const counts: number[] = [];
         for (let x = 0; x < world; x++) {
           for (let y = 0; y < world; y++) {
-            const bytes = await reprojectTile(`reproj://https://demotiles.maplibre.org/tiles/${z}/${x}/${y}.pbf`);
+            const bytes = await reprojectTile(`reproj://http://127.0.0.1:4173/tiles/weather/${z}/${x}/${y}.mlt`);
             let features = 0;
             try {
-              const tile = new VectorTile(new Pbf(new Uint8Array(bytes)));
-              features = Object.keys(tile.layers).reduce((sum, name) => sum + tile.layers[name].length, 0);
+              features = mlt.decodeTile(bytes).reduce((sum: number, table: any) => sum + table.numFeatures, 0);
             } catch {
               features = -1;
             }

@@ -28,7 +28,8 @@ test('every catalog CRS builds a transformer without crashing PROJ', async ({ pa
       sources: {
         vec: {
           type: 'vector',
-          tiles: ['http://127.0.0.1:4173/tiles/{z}/{x}/{y}.pbf'],
+          encoding: 'mlt',
+          tiles: ['http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt'],
         },
         pts: {
           type: 'geojson',

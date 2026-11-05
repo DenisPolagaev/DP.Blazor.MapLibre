@@ -3,6 +3,10 @@
 // Any-projection support for MapLibre GL JS on top of the main-thread proj-wasm pipeline in proj-pipeline.js.
 // There are no Web Workers and no maplibre-proj / backproj.
 //
+// Vector tiles are reprojected as MapLibre Tiles (MLT): the pipeline decodes them with @maplibre/mlt, reprojects the
+// geometry and encodes the result back as MLT. A vector source must therefore declare encoding: "mlt"; there is no
+// MVT path, and a source that does not declare MLT is dropped with a warning.
+//
 // State ownership:
 // - Process-wide (module scope): the proj-wasm instance (inside proj-pipeline.js), the import map flag, the
 //   projection cache, the transformer registry and the protocol name sequence. MapLibre's protocol registry is
@@ -28,9 +32,8 @@ function contentUrl(relativePath) {
 const vendor = {
     projWasm: contentUrl(`${vendorRoot}proj-wasm/dist/proj.mjs`),
     ffiWasm: contentUrl(`${vendorRoot}ffi-wasm/dist/ffi-wasm.mjs`),
-    vectorTile: contentUrl(`${vendorRoot}mapbox-vector-tile/index.js`),
+    mlt: contentUrl(`${vendorRoot}maplibre-mlt/dist/index.js`),
     pointGeometry: contentUrl(`${vendorRoot}mapbox-point-geometry/index.js`),
-    pbf: contentUrl(`${vendorRoot}pbf/index.js`),
     pmtiles: contentUrl(`${vendorRoot}pmtiles/pmtiles.mjs`),
     squintCore: contentUrl(`${vendorRoot}squint-cljs/core.js`),
     squintString: contentUrl(`${vendorRoot}squint-cljs/src/squint/string.js`),
@@ -48,9 +51,8 @@ function buildImportMap() {
             'maplibre-gl': contentUrl('_content/DP.Blazor.MapLibre/maplibre-gl/dist/maplibre-gl.mjs'),
             'proj-wasm': vendor.projWasm,
             'ffi-wasm': vendor.ffiWasm,
-            '@mapbox/vector-tile': vendor.vectorTile,
+            '@maplibre/mlt': vendor.mlt,
             '@mapbox/point-geometry': vendor.pointGeometry,
-            'pbf': vendor.pbf,
             'pmtiles': vendor.pmtiles,
             'squint-cljs/core.js': vendor.squintCore,
             'squint-cljs/src/squint/string.js': vendor.squintString,
@@ -357,6 +359,14 @@ function readProjectionArgs(options) {
 
 const rasterSourceTypes = new Set(['raster', 'raster-dem', 'image', 'video', 'canvas']);
 
+// Vector tiles are MapLibre Tiles only: the reprojection pipeline decodes and encodes MLT. A style
+// source is MLT when it says so explicitly — MapLibre's default is "mvt".
+const MLT_ENCODING = 'mlt';
+
+function sourceEncoding(source) {
+    return source?.encoding ?? 'mvt';
+}
+
 function warnSkippedSource(sourceId, reason) {
     console.warn(`ProjPlugin: skipped source "${sourceId}" and its layers: ${reason}.`);
 }
@@ -379,6 +389,14 @@ async function prepareStyle(rawStyle) {
         }
 
         if (source?.type !== 'vector') {
+            continue;
+        }
+
+        if (sourceEncoding(source) !== MLT_ENCODING) {
+            drop(
+                id,
+                `it is encoded as "${sourceEncoding(source)}"; only MapLibre Tile ("mlt") sources can be `
+                + 'reprojected — rebuild the archive');
             continue;
         }
 
@@ -449,6 +467,14 @@ async function reprojectSourceObject(source, context) {
     if (source.type === 'geojson' && source.data && typeof source.data === 'object') {
         source.data = await pipeline.reprojectGeoJson(source.data, projection);
         return source;
+    }
+
+    if (source.type === 'vector' && sourceEncoding(source) !== MLT_ENCODING) {
+        // reprojectStyleCore drops such sources with a warning before this point; this guard covers the
+        // direct reprojectSource call, where silently returning an MVT source would end up in MapLibre.
+        throw new Error(
+            `Source "${label}" is encoded as "${sourceEncoding(source)}"; ProjPlugin reprojects MapLibre Tile `
+            + '("mlt") vectors only. Rebuild the tiles in MLT and set encoding: "mlt" on the source.');
     }
 
     if (source.type !== 'vector' || !(source.__pmtilesArchive || Array.isArray(source.tiles))) {

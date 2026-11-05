@@ -4,13 +4,14 @@
 
 The plugin runs a self-contained reprojection pipeline on the browser main thread for GeoJSON and vector tiles. It has no Web Workers and does not use `maplibre-proj` or `backproj`.
 
-The vendored runtime lives under `_content/ProjPlugin/vendor` and is about 14.8 MB on disk (14.1 MiB):
+The vendored runtime lives under `_content/ProjPlugin/vendor` and is about 15.0 MB on disk (14.3 MiB):
 
 | Package | Size on disk | Notes |
 |---|---|---|
 | `proj-wasm` | 14.2 MB | includes `proj.db` (10.1 MB) and the PROJ module `proj-emscripten.wasm` (3.5 MB) |
 | `ffi-wasm` | 0.1 MB | platform, dispatch, worker and WASM helpers that `proj-wasm` imports |
-| everything else | about 0.6 MB | JavaScript helpers |
+| `@maplibre/mlt` | 0.4 MB | MapLibre Tile decoder and encoder used by the vector tile pipeline |
+| everything else | about 0.3 MB | JavaScript helpers |
 
 ## Install
 
@@ -23,6 +24,7 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 ## Requirements
 
 - The map **must** be created with `RenderWorldCopies = false`. The fake coordinate space does not tile.
+- Vector sources must be MapLibre Tiles (`encoding: "mlt"`). MVT sources are not supported and are dropped with a warning.
 - Register the plugin with `MapLibre.RegisterPlugin` before calling its members.
 - Declare the import map entries from `GetImportMapAsync()` in a static `<script type="importmap">` before the Blazor framework script (see [Import map](#import-map)). This is required for Firefox and Safari and recommended for every browser.
 
@@ -92,7 +94,7 @@ Copy the complete `imports` object returned by `GetImportMapAsync()`; the sample
 
 - **Only the first tile URL template of a vector source is used.** A warning is logged for a source with several templates.
 - **Input tiles per output tile are capped** by `MaxInputTiles` (default 64). When a tile needs more, the output tile is incomplete and a warning names the source.
-- **Sources that cannot be reprojected are removed with their layers**, and a warning names each one. These are raster sources, vector sources without http(s) tile URLs, and sources that the plugin already reprojected.
+- **Sources that cannot be reprojected are removed with their layers**, and a warning names each one. These are raster sources, vector sources that are not MapLibre Tiles (`encoding` other than `"mlt"`), vector sources without http(s) tile URLs, and sources that the plugin already reprojected.
 - **HTTP 204 and 404 for an input tile** mean "no data here" and are treated as empty. Other HTTP errors fail the output tile, so MapLibre emits an error event. Failed loads are not cached.
 - **Re-running** `ApplyCurrentStyleProjectionAsync` on a style that the plugin already reprojected is not supported.
 - **`TileBoundaries`** is reserved. The value is sent to the pipeline, but debug layers are not implemented yet.

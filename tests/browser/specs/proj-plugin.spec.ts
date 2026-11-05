@@ -31,7 +31,8 @@ test.describe('ProjPlugin', () => {
           },
           vec: {
             type: 'vector',
-            tiles: ['http://127.0.0.1:4173/tiles/{z}/{x}/{y}.pbf'],
+            encoding: 'mlt',
+            tiles: ['http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt'],
           },
         },
         layers: [
@@ -152,7 +153,7 @@ test.describe('ProjPlugin', () => {
       const map = (window as any).__map;
 
       const tilejson = {
-        tiles: ['http://127.0.0.1:4173/tiles/{z}/{x}/{y}.pbf'],
+        tiles: ['http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt'],
         minzoom: 0,
         maxzoom: 5,
         attribution: 'test',
@@ -162,8 +163,8 @@ test.describe('ProjPlugin', () => {
       map.setStyle({
         version: 8,
         sources: {
-          vec: { type: 'vector', url: tilejsonUrl },
-          pm: { type: 'vector', url: 'pmtiles://http://127.0.0.1:4173/archive.pmtiles' },
+          vec: { type: 'vector', encoding: 'mlt', url: tilejsonUrl },
+          pm: { type: 'vector', encoding: 'mlt', url: 'pmtiles://http://127.0.0.1:4173/archive.pmtiles' },
           relief: {
             type: 'raster',
             tiles: ['http://127.0.0.1:4173/relief/{z}/{x}/{y}.png'],
@@ -203,13 +204,13 @@ test.describe('ProjPlugin', () => {
 
       const a = await plugin.reprojectSource({
         sourceId: 'layer-a',
-        source: { type: 'vector', tiles: ['http://127.0.0.1:4173/a/{z}/{x}/{y}.pbf'] },
+        source: { type: 'vector', encoding: 'mlt', tiles: ['http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt'] },
         crs: 'ESRI:54030',
       });
 
       const b = await plugin.reprojectSource({
         sourceId: 'layer-b',
-        source: { type: 'vector', tiles: ['http://127.0.0.1:4173/b/{z}/{x}/{y}.pbf'] },
+        source: { type: 'vector', encoding: 'mlt', tiles: ['http://127.0.0.1:4173/tiles/fire/{z}/{x}/{y}.mlt'] },
         crs: 'ESRI:54030',
       });
 
@@ -252,11 +253,56 @@ test.describe('ProjPlugin', () => {
         entries: Object.keys(importMap.imports).length,
         projWasm: importMap.imports['proj-wasm'],
         ffiWasm: importMap.imports['ffi-wasm'],
+        mlt: importMap.imports['@maplibre/mlt'],
+        pointGeometry: importMap.imports['@mapbox/point-geometry'],
+        legacyMvt: [importMap.imports['@mapbox/vector-tile'], importMap.imports['pbf']].filter(Boolean),
       };
     });
 
     expect(result.entries).toBeGreaterThan(10);
     expect(result.projWasm).toContain('_content/ProjPlugin/vendor/proj-wasm/');
     expect(result.ffiWasm).toContain('_content/ProjPlugin/vendor/ffi-wasm/');
+    expect(result.mlt).toContain('_content/ProjPlugin/vendor/maplibre-mlt/');
+    expect(result.pointGeometry).toContain('_content/ProjPlugin/vendor/mapbox-point-geometry/');
+    expect(result.legacyMvt).toEqual([]);
+  });
+
+  test('decodes and encodes MLT through the import map', async ({ page }) => {
+    await openHarness(page);
+
+    const result = await page.evaluate(async () => {
+      // Loading the pipeline installs the vendored import map, which is what makes '@maplibre/mlt' resolvable.
+      await (window as any).__proj.reprojectStyle({
+        style: { version: 8, sources: {}, layers: [] },
+        crs: 'ESRI:54030',
+      });
+      const mlt: any = await import('@maplibre/mlt');
+      const response = await fetch('http://127.0.0.1:4173/tiles/weather/0/0/0.mlt');
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const tables = mlt.decodeTile(bytes);
+      const reencoded = mlt.encodeTile(tables.map((table: any) => ({
+        name: table.name,
+        extent: table.extent,
+        features: table.getFeatures().map((feature: any) => ({
+          id: feature.id,
+          geometry: {
+            type: 'Polygon',
+            coordinates: feature.geometry.coordinates.map((ring: any) => ring.map((p: any) => [p.x, p.y])),
+          },
+          properties: { temperature_2m: 1.5 },
+        })),
+      })));
+      return {
+        layers: tables.map((table: any) => table.name),
+        features: tables.reduce((sum: number, table: any) => sum + table.numFeatures, 0),
+        reencodedBytes: reencoded.byteLength,
+        reencodedLayers: mlt.decodeTile(reencoded).map((table: any) => table.name),
+      };
+    });
+
+    expect(result.layers).toEqual(['weather_grid_hourly']);
+    expect(result.features).toBeGreaterThan(0);
+    expect(result.reencodedBytes).toBeGreaterThan(100);
+    expect(result.reencodedLayers).toEqual(['weather_grid_hourly']);
   });
 });

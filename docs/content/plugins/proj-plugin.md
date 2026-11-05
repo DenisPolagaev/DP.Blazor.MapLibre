@@ -2,7 +2,7 @@
 
 The **Projection plugin** renders a `MapLibre` map in any coordinate reference system. It is built directly on [proj-wasm](https://www.npmjs.com/package/proj-wasm) (PROJ 9 compiled to WebAssembly) and runs a self-contained, **main-thread** reprojection pipeline for GeoJSON and vector tiles — no Web Workers, no `maplibre-proj`/`backproj`.
 
-The plugin project lives at `src/plugins/DP.Blazor.MapLibre.ProjPlugin`. The whole runtime dependency graph is vendored under `wwwroot/vendor` (~28 MB of WebAssembly plus `proj.db`) and regenerated with `node scripts/vendor-proj.mjs`.
+The plugin project lives at `src/plugins/DP.Blazor.MapLibre.ProjPlugin`. The whole runtime dependency graph is vendored under `wwwroot/vendor` (~15 MB, mostly the proj-wasm WebAssembly plus `proj.db`) and regenerated with `node scripts/vendor-proj.mjs`.
 
 ## Installation
 
@@ -15,6 +15,7 @@ dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.M
 - MapLibre GL JS must be loaded (the core `MapLibre` component handles this).
 - The map **must** be created with `RenderWorldCopies = false` (see `MapOptions.RenderWorldCopies`): the fake coordinate space does not tile.
 - The plugin forces `projection: { type: "mercator" }` on the reprojected style.
+- Vector sources must be **MapLibre Tiles** and declare `encoding: "mlt"`. There is no MVT path: a vector source without that flag is dropped with a warning (MapLibre's default encoding is `mvt`).
 - Geographic CRS (for example `EPSG:4326`) and interrupted projections (for example Goode Homolosine) are not supported.
 
 ## Register the plugin
@@ -95,7 +96,7 @@ var result = await _proj.ReprojectStyleAsync(new ProjReprojectOptions
 });
 ```
 
-Call `ReleaseTransformerAsync(id)` to drop a handle, or `ReleaseProjectionResourcesAsync()` to terminate the shared worker pool (transformers become invalid; the next reprojection recreates the pool).
+Call `ReleaseTransformerAsync(id)` to drop a handle, or `ReleaseProjectionResourcesAsync()` to clear the projection cache (transformers become invalid; the next reprojection derives them again).
 
 ## Coordinates
 
@@ -111,7 +112,18 @@ var fake = await _proj.TransformPointAsync(new LngLat(-77.0, 38.9), _transformer
 
 ## Vector tiles
 
-Vector tile sources in the style are rewritten to a custom protocol handler automatically. The handler fetches the input Mercator tiles, reprojects them through a worker pool and returns reprojected PBF data. No extra configuration is required; the vendored `proj-wasm`/`ffi-wasm` runtime is part of the package.
+Vector tile sources in the style are rewritten to a custom protocol handler automatically. The handler fetches the
+input Mercator tiles, decodes them as MapLibre Tiles (`@maplibre/mlt`), reprojects the geometry and encodes the result
+back as MLT, all on the main thread. No extra configuration is required, but the source must declare
+`encoding: "mlt"`:
+
+```json
+"weather-grid": { "type": "vector", "encoding": "mlt", "url": "pmtiles://https://example/weather.pmtiles" }
+```
+
+A vector source without `encoding: "mlt"` (an MVT tileset, or a source relying on MapLibre's `mvt` default) cannot be
+reprojected: it is removed from the style together with its layers and a warning names the source. Rebuild such a
+tileset as MLT — the projection plugin deliberately carries no MVT decoder.
 
 ## Browser support and import maps
 
@@ -132,6 +144,7 @@ var importMap = await _proj.GetImportMapAsync();      // resolved specifier -> _
 - **Labels/symbols**: MapLibre's collision detection assumes Mercator, so text placement is slightly wrong in distorted areas.
 - **`queryRenderedFeatures`** returns fake lon/lat — use `InverseTransformCoordsAsync`.
 - **Dynamic sources**: `ReprojectStyleAsync` reprojects the sources present in the style you pass. Sources added later (for example by the layer services) are not reprojected automatically.
+- **MVT sources**: only MapLibre Tiles (`encoding: "mlt"`) can be reprojected; an MVT source is dropped with a warning. The plugin ships no MVT decoder.
 - The vendored package tree is updated manually via `scripts/vendor-proj.mjs`; `0.0.x`/alpha upstream versions may change their module layout.
 
 ## Related topics

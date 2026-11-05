@@ -3,16 +3,19 @@
 //
 // Responsibilities:
 //   - real lon/lat <-> fake lon/lat (fake space is what MapLibre renders in Mercator)
-//   - MapLibre protocol handler that reprojects vector tiles (MVT in / MVT out)
+//   - MapLibre protocol handler that reprojects vector tiles (MLT in / MLT out)
 //   - GeoJSON reprojection
 //
-// Known simplifications vs backproj: no cross-input-tile feature stitching and no
-// polygon repair. Geometry is densified in real space and clipped to the output tile.
+// Vector tiles are MapLibre Tiles (MLT v1): the input tile is decoded with @maplibre/mlt, the
+// geometry is reprojected, and the result is encoded back with @maplibre/mlt. There is no MVT
+// branch: a source that declares encoding "mvt" cannot be reprojected.
+//
+// Known simplifications vs backproj: no cross-input-tile feature stitching beyond the feature id and
+// no polygon repair. Geometry is densified in real space and clipped to the output tile.
 
 import * as proj from './vendor/proj-wasm/dist/proj.mjs';
-import { VectorTile } from '@mapbox/vector-tile';
+import { decodeTile, encodeTile } from '@maplibre/mlt';
 import { PMTiles } from 'pmtiles';
-import Pbf from 'pbf';
 
 const EARTH_RADIUS = 6378137;
 const MERC_MAX = Math.PI * EARTH_RADIUS; // 20037508.342789244
@@ -203,20 +206,10 @@ function lonLatToMerc(lon, lat) {
     return [lon * RAD * EARTH_RADIUS, EARTH_RADIUS * Math.log(Math.tan(Math.PI / 4 + lat * RAD / 2))];
 }
 
-function inputTileGeom(realLonLat, z, x, y) {
-    // real lon/lat -> tile-local [0..extent] for the input Mercator tile.
-    const [mx, my] = lonLatToMerc(realLonLat[0], realLonLat[1]);
+function inputTileLocalToLonLat(px, py, z, x, y, extent = TILE_EXTENT) {
     const b = tileToMerc(z, x, y);
-    return [
-        (mx - b.minX) / (b.maxX - b.minX) * TILE_EXTENT,
-        (b.maxY - my) / (b.maxY - b.minY) * TILE_EXTENT,
-    ];
-}
-
-function inputTileLocalToLonLat(px, py, z, x, y) {
-    const b = tileToMerc(z, x, y);
-    const mx = b.minX + (px / TILE_EXTENT) * (b.maxX - b.minX);
-    const my = b.maxY - (py / TILE_EXTENT) * (b.maxY - b.minY);
+    const mx = b.minX + (px / extent) * (b.maxX - b.minX);
+    const my = b.maxY - (py / extent) * (b.maxY - b.minY);
     return mercToLonLat(mx, my);
 }
 
@@ -229,136 +222,136 @@ function fakeToTileLocal(fake, z, x, y) {
     ];
 }
 
-// ----- MVT encoding ----------------------------------------------------------
+// ----- MapLibre Tile decoding -------------------------------------------------
 
-function zigzag(value) {
-    return (value << 1) ^ (value >> 31);
+// GEOMETRY_TYPE of the MapLibre Tile spec: 0..2 are single-part geometries, 3..5 their multi variants.
+const GEOMETRY_TYPE = {
+    POINT: 0,
+    LINESTRING: 1,
+    POLYGON: 2,
+    MULTIPOINT: 3,
+    MULTILINESTRING: 4,
+    MULTIPOLYGON: 5,
+};
+
+const INT32_MAX = 2 ** 31 - 1;
+const INT64_MAX = 2n ** 63n - 1n;
+
+function isGzip(bytes) {
+    return bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
 }
 
-function writeValue(pbf, value) {
-    const type = typeof value;
-    if (type === 'string') {
-        pbf.writeStringField(1, value);
-    } else if (type === 'boolean') {
-        pbf.writeBooleanField(7, value);
-    } else if (type === 'number') {
-        if (Number.isInteger(value)) {
-            if (value < 0) {
-                pbf.writeSVarintField(6, value);
+// decodeTile does not inflate gzip (transport normally does: PMTiles and HTTP Content-Encoding do it
+// before us). A raw gzip payload is still handled so a gzipped file served as-is reprojects too.
+async function inflate(bytes) {
+    if (typeof DecompressionStream !== 'function') {
+        throw new Error('the tile is gzip-compressed and this browser has no DecompressionStream');
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Decodes one input tile into [{ name, extent, features }]; features carry the MapLibre Tile geometry.
+async function decodeInputTile(buffer) {
+    let bytes = new Uint8Array(buffer);
+    if (isGzip(bytes)) {
+        bytes = await inflate(bytes);
+    }
+
+    return decodeTile(bytes).map((table) => ({
+        name: table.name,
+        extent: table.extent || TILE_EXTENT,
+        features: table.getFeatures(),
+    }));
+}
+
+// ----- MapLibre Tile encoding -------------------------------------------------
+
+// The physical column type the encoder should write. Passing it explicitly keeps the encoder from
+// inferring a type per layer: its inference throws when a column mixes numbers and bigints, which the
+// reprojected output can do because it merges features from several input tiles.
+function propertyColumnType(values, layerName, columnName) {
+    const present = values.filter((value) => value !== null && value !== undefined);
+    if (present.length === 0) {
+        return 'string';
+    }
+    if (present.some((value) => typeof value === 'object')) {
+        return 'map';
+    }
+    if (present.every((value) => typeof value === 'boolean')) {
+        return 'boolean';
+    }
+    if (present.every((value) => typeof value === 'string')) {
+        return 'string';
+    }
+    if (present.every((value) => typeof value === 'bigint' || Number.isInteger(value))) {
+        const big = present.map((value) => (typeof value === 'bigint' ? value : BigInt(value)));
+        if (big.some((value) => value > INT64_MAX)) {
+            return 'uint64';
+        }
+        const fitsInt32 = big.every((value) => value >= BigInt(-INT32_MAX - 1) && value <= BigInt(INT32_MAX));
+        return fitsInt32 ? 'int32' : 'int64';
+    }
+    if (present.every((value) => typeof value === 'number')) {
+        return 'double';
+    }
+
+    // Mixed scalars (for example a string in one tile and a number in another): a string column keeps
+    // the tile readable, and the type change is surfaced instead of silently reshaping the schema.
+    console.warn(
+        `ProjPlugin: layer "${layerName}" property "${columnName}" mixes value types; `
+        + 'the reprojected tile writes it as strings.');
+    return 'string';
+}
+
+function propertyTypesFor(features, layerName) {
+    const columns = new Map();
+    for (const feature of features) {
+        for (const [name, value] of Object.entries(feature.properties ?? {})) {
+            const values = columns.get(name);
+            if (values) {
+                values.push(value);
             } else {
-                pbf.writeVarintField(5, value);
-            }
-        } else {
-            pbf.writeDoubleField(3, value);
-        }
-    } else if (value == null) {
-        pbf.writeStringField(1, '');
-    } else {
-        pbf.writeStringField(1, String(value));
-    }
-}
-
-function writeGeometry(pbf, geometry, type) {
-    const commands = [];
-    let cx = 0;
-    let cy = 0;
-    const emit = (id, points) => {
-        if (points.length === 0) {
-            return;
-        }
-        commands.push((id & 0x7) | (points.length << 3));
-        for (const [px, py] of points) {
-            const rx = Math.round(px);
-            const ry = Math.round(py);
-            commands.push(zigzag(rx - cx));
-            commands.push(zigzag(ry - cy));
-            cx = rx;
-            cy = ry;
-        }
-    };
-
-    if (type === 1) {
-        for (const [point] of geometry) {
-            emit(1, [point]);
-        }
-    } else {
-        for (const ring of geometry) {
-            if (ring.length < 2) {
-                continue;
-            }
-            emit(1, [ring[0]]);
-            emit(2, ring.slice(1));
-            if (type === 3) {
-                commands.push((7 & 0x7) | (1 << 3));
+                columns.set(name, [value]);
             }
         }
     }
 
-    pbf.writePackedVarint(4, commands);
+    const types = {};
+    for (const [name, values] of columns) {
+        types[name] = propertyColumnType(values, layerName, name);
+    }
+
+    return types;
 }
 
-function encodeMvt(layers) {
-    const pbf = new Pbf();
-    for (const [name, layer] of Object.entries(layers)) {
+function concatBytes(chunks) {
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return out;
+}
+
+// Encodes layers into one MLT tile. Layers are encoded one at a time because the encoder takes a
+// single property-type map per call, and two layers of one tile may name a column differently typed.
+function encodeTileLayers(layers) {
+    const chunks = [];
+    for (const layer of layers) {
         if (layer.features.length === 0) {
             continue;
         }
-
-        pbf.writeMessage(3, (_obj, message) => {
-            message.writeVarintField(15, 2); // version
-            message.writeStringField(1, name);
-
-            const keys = [];
-            const keyIndex = new Map();
-            const values = [];
-            const valueIndex = new Map();
-
-            for (const feature of layer.features) {
-                message.writeMessage(2, (_o, f) => {
-                    if (feature.id != null) {
-                        f.writeVarintField(1, feature.id);
-                    }
-
-                    const tags = [];
-                    for (const [k, v] of Object.entries(feature.tags ?? {})) {
-                        if (v == null) {
-                            continue;
-                        }
-                        let ki = keyIndex.get(k);
-                        if (ki === undefined) {
-                            ki = keys.length;
-                            keys.push(k);
-                            keyIndex.set(k, ki);
-                        }
-                        const vk = `${typeof v}:${v}`;
-                        let vi = valueIndex.get(vk);
-                        if (vi === undefined) {
-                            vi = values.length;
-                            values.push(v);
-                            valueIndex.set(vk, vi);
-                        }
-                        tags.push(ki, vi);
-                    }
-
-                    if (tags.length > 0) {
-                        f.writePackedVarint(2, tags);
-                    }
-                    f.writeVarintField(3, feature.type);
-                    writeGeometry(f, feature.geometry, feature.type);
-                });
-            }
-
-            for (const key of keys) {
-                message.writeStringField(3, key);
-            }
-            for (const value of values) {
-                message.writeMessage(4, (_o, v) => writeValue(v, value));
-            }
-            message.writeVarintField(5, TILE_EXTENT);
-        });
+        chunks.push(encodeTile([{
+            name: layer.name,
+            extent: TILE_EXTENT,
+            features: layer.features,
+        }], { propertyTypes: propertyTypesFor(layer.features, layer.name) }));
     }
 
-    return pbf.finish();
+    return chunks.length === 0 ? new Uint8Array(0) : concatBytes(chunks);
 }
 
 // ----- clipping / densify ----------------------------------------------------
@@ -509,6 +502,134 @@ function chooseInputZoom(west, east, south, north, outputZ) {
         }
     }
     return 0;
+}
+
+// ----- output geometry --------------------------------------------------------
+
+// Vertices are written as Int32 zigzag varints, so positions are rounded and range-checked before encoding.
+function roundPosition(position) {
+    return [Math.round(position[0]), Math.round(position[1])];
+}
+
+function isEncodable(position) {
+    return Number.isFinite(position[0]) && Number.isFinite(position[1])
+        && Math.abs(position[0]) <= INT32_MAX && Math.abs(position[1]) <= INT32_MAX;
+}
+
+// Drops consecutive duplicate positions (rounding collapses short segments) so a ring keeps at least
+// the vertices the encoder needs to describe it.
+function simplifyRing(ring) {
+    const out = [];
+    for (const position of ring) {
+        const rounded = roundPosition(position);
+        const last = out[out.length - 1];
+        if (!last || last[0] !== rounded[0] || last[1] !== rounded[1]) {
+            out.push(rounded);
+        }
+    }
+    return out;
+}
+
+// Rings of a multipolygon are told apart by winding, the same rule the decoder's GeoJSON helper uses:
+// a ring wound like the current exterior starts a new polygon, the other way is one of its holes.
+function groupPolygonRings(rings) {
+    const polygons = [];
+    let polygon;
+    let exteriorIsCcw;
+    for (const ring of rings) {
+        const area = ringArea(ring);
+        if (!polygon || area === 0 || (area < 0) === exteriorIsCcw) {
+            if (polygon) {
+                polygons.push(polygon);
+            }
+            polygon = [ring];
+            exteriorIsCcw = area === 0 ? undefined : area < 0;
+        } else {
+            polygon.push(ring);
+        }
+    }
+    if (polygon) {
+        polygons.push(polygon);
+    }
+    return polygons;
+}
+
+function buildPointGeometry(fakeRings) {
+    const points = fakeRings.flat()
+        .filter((p) => isEncodable(p)
+            && p[0] >= -64 && p[0] <= TILE_EXTENT + 64
+            && p[1] >= -64 && p[1] <= TILE_EXTENT + 64)
+        .map(roundPosition);
+    if (points.length === 0) {
+        return null;
+    }
+    return points.length === 1
+        ? { type: 'Point', coordinates: points[0] }
+        : { type: 'MultiPoint', coordinates: points };
+}
+
+function buildLineGeometry(fakeRings) {
+    const segments = [];
+    for (const ring of fakeRings) {
+        for (let s = 0; s < ring.length - 1; s++) {
+            const a = ring[s];
+            const b = ring[s + 1];
+            if (!isEncodable(a) || !isEncodable(b)) {
+                continue;
+            }
+            const segment = clipSegment(a, b, TILE_EXTENT, 8);
+            if (segment) {
+                segments.push(segment);
+            }
+        }
+    }
+    const lines = mergeLines(segments, 0.5)
+        .map(simplifyRing)
+        .filter((line) => line.length >= 2);
+    if (lines.length === 0) {
+        return null;
+    }
+    return lines.length === 1
+        ? { type: 'LineString', coordinates: lines[0] }
+        : { type: 'MultiLineString', coordinates: lines };
+}
+
+function buildPolygonGeometry(fakeRings) {
+    const rings = [];
+    for (const ring of fakeRings) {
+        const usable = ring.filter(isEncodable);
+        if (usable.length < 3) {
+            continue;
+        }
+        // Winding is preserved on purpose: it is what separates exteriors from holes below.
+        const clipped = clipPolygon(usable, TILE_EXTENT, 8);
+        if (clipped.length < 3 || Math.abs(ringArea(clipped)) <= 1) {
+            continue;
+        }
+        const simplified = simplifyRing(clipped);
+        if (simplified.length >= 3) {
+            rings.push(simplified);
+        }
+    }
+    if (rings.length === 0) {
+        return null;
+    }
+    const polygons = groupPolygonRings(rings);
+    return polygons.length === 1
+        ? { type: 'Polygon', coordinates: polygons[0] }
+        : { type: 'MultiPolygon', coordinates: polygons };
+}
+
+// MLT carries multi geometries as one feature; the output keeps that shape and only reports the
+// single-part variant when a feature really has one part.
+function buildFeatureGeometry(type, fakeRings) {
+    if (type === GEOMETRY_TYPE.POINT || type === GEOMETRY_TYPE.MULTIPOINT) {
+        return buildPointGeometry(fakeRings);
+    }
+    if (type === GEOMETRY_TYPE.LINESTRING || type === GEOMETRY_TYPE.MULTILINESTRING) {
+        return buildLineGeometry(fakeRings);
+    }
+    return buildPolygonGeometry(fakeRings);
 }
 
 // `input` is either an array of XYZ tile URL templates, or `{ kind: 'pmtiles' }` (the archive URL is derived from the
@@ -664,36 +785,37 @@ export function createTileReprojector(projection, input, options = {}) {
                     continue;
                 }
 
-                let tile;
+                let decoded;
                 try {
-                    tile = new VectorTile(new Pbf(new Uint8Array(buffer)));
+                    decoded = await decodeInputTile(buffer);
                 } catch (error) {
                     console.warn(
                         `ProjPlugin: source "${sourceId}" input tile ${inputZoom}/${xx}/${yy} could not be decoded `
-                        + `and was skipped: ${error.message}`);
+                        + `as MapLibre Tile and was skipped: ${error.message}`);
                     continue;
                 }
 
-                for (const [layerName, layer] of Object.entries(tile.layers)) {
-                    const layerMap = collected.get(layerName) ?? (() => {
+                for (const table of decoded) {
+                    const layerMap = collected.get(table.name) ?? (() => {
                         const created = new Map();
-                        collected.set(layerName, created);
+                        collected.set(table.name, created);
                         return created;
                     })();
-                    for (let i = 0; i < layer.length; i++) {
-                        const feature = layer.feature(i);
-                        const geometry = feature.loadGeometry();
-                        const realRings = geometry.map((ring) =>
-                            densifyRing(ring.map((p) => inputTileLocalToLonLat(p.x, p.y, inputZoom, xx, yy)), 0.25));
+                    for (const feature of table.features) {
+                        const geometry = feature.geometry;
+                        const realRings = geometry.coordinates.map((ring) =>
+                            densifyRing(
+                                ring.map((p) => inputTileLocalToLonLat(p.x, p.y, inputZoom, xx, yy, table.extent)),
+                                0.25));
 
                         // Stitch fragments of the same feature across input tiles when the
                         // feature carries an id; otherwise keep fragments independent.
                         const key = feature.id != null
                             ? `id:${feature.id}`
-                            : `frag:${inputZoom}:${xx}:${yy}:${i}:${fragmentSeq++}`;
+                            : `frag:${inputZoom}:${xx}:${yy}:${fragmentSeq++}`;
                         let entry = layerMap.get(key);
                         if (!entry) {
-                            entry = { type: feature.type, id: feature.id, tags: feature.properties, rings: [] };
+                            entry = { type: geometry.type, id: feature.id, tags: feature.properties, rings: [] };
                             layerMap.set(key, entry);
                         }
                         entry.rings.push(...realRings);
@@ -702,68 +824,32 @@ export function createTileReprojector(projection, input, options = {}) {
             }
         }
 
-        const layers = {};
+        const layers = [];
         for (const [layerName, layerMap] of collected) {
             const features = [];
             for (const entry of layerMap.values()) {
-                const realRings = entry.type === 2 ? mergeLines(entry.rings, 1e-6) : entry.rings;
-                const flat = realRings.flat();
+                const flat = entry.rings.flat();
                 if (flat.length === 0) {
                     continue;
                 }
 
                 const fake = await projection.toFake(flat);
                 let index = 0;
-                const fakeRings = realRings.map((ring) => ring.map(() => fakeToTileLocal(fake[index++], z, x, y)));
-
-                const extentF = TILE_EXTENT;
-                const buffered = 8;
-                const finite = ([px, py]) => Number.isFinite(px) && Number.isFinite(py);
-                let outGeometry;
-                if (entry.type === 1) {
-                    outGeometry = fakeRings.flat()
-                        .filter((p) => finite(p) && p[0] >= -64 && p[0] <= extentF + 64 && p[1] >= -64 && p[1] <= extentF + 64)
-                        .map((p) => [p]);
-                } else if (entry.type === 2) {
-                    outGeometry = [];
-                    for (const ring of fakeRings) {
-                        for (let s = 0; s < ring.length - 1; s++) {
-                            if (!finite(ring[s]) || !finite(ring[s + 1])) {
-                                continue;
-                            }
-                            const seg = clipSegment(ring[s], ring[s + 1], extentF, buffered);
-                            if (seg) {
-                                outGeometry.push(seg);
-                            }
-                        }
-                    }
-                    outGeometry = mergeLines(outGeometry, 0.5);
-                } else {
-                    outGeometry = [];
-                    for (const ring of fakeRings) {
-                        const clipped = clipPolygon(ring.filter(finite), extentF, buffered);
-                        if (clipped.length >= 3) {
-                            const area = ringArea(clipped);
-                            if (Math.abs(area) > 1) {
-                                outGeometry.push(area > 0 ? clipped : clipped.reverse());
-                            }
-                        }
-                    }
-                }
-
-                if (outGeometry.length === 0) {
+                const fakeRings = entry.rings.map((ring) => ring.map(() => fakeToTileLocal(fake[index++], z, x, y)));
+                const geometry = buildFeatureGeometry(entry.type, fakeRings);
+                if (!geometry) {
                     continue;
                 }
 
-                features.push({ id: entry.id, tags: entry.tags, type: entry.type, geometry: outGeometry });
+                features.push({ id: entry.id, geometry, properties: entry.tags });
             }
 
             if (features.length > 0) {
-                layers[layerName] = { features };
+                layers.push({ name: layerName, features });
             }
         }
 
-        return encodeMvt(layers);
+        return encodeTileLayers(layers);
     };
 }
 
