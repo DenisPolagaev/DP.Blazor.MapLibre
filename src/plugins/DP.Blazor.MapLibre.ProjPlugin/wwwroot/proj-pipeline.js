@@ -3,19 +3,22 @@
 //
 // Responsibilities:
 //   - real lon/lat <-> fake lon/lat (fake space is what MapLibre renders in Mercator)
-//   - MapLibre protocol handler that reprojects vector tiles (MLT in / MLT out)
+//   - MapLibre protocol handler that reprojects vector tiles (MLT or MVT in / MLT out)
 //   - GeoJSON reprojection
 //
-// Vector tiles are MapLibre Tiles (MLT v1): the input tile is decoded with @maplibre/mlt, the
-// geometry is reprojected, and the result is encoded back with @maplibre/mlt. There is no MVT
-// branch: a source that declares encoding "mvt" cannot be reprojected.
+// Our own archives are MapLibre Tiles (MLT v1): the input tile is decoded with @maplibre/mlt and the result is
+// encoded back with @maplibre/mlt. A third-party style (the OpenFreeMap basemap the Map API serves) has no MLT
+// build, so its MVT tiles are decoded with MapLibre's own @mapbox/vector-tile and re-encoded as MLT. The output of
+// the handler is always MLT, whatever came in.
 //
 // Known simplifications vs backproj: no cross-input-tile feature stitching beyond the feature id and
 // no polygon repair. Geometry is densified in real space and clipped to the output tile.
 
 import * as proj from './vendor/proj-wasm/dist/proj.mjs';
 import { decodeTile, encodeTile } from '@maplibre/mlt';
+import { VectorTile } from '@mapbox/vector-tile';
 import { PMTiles } from 'pmtiles';
+import Pbf from 'pbf';
 
 const EARTH_RADIUS = 6378137;
 const MERC_MAX = Math.PI * EARTH_RADIUS; // 20037508.342789244
@@ -222,7 +225,7 @@ function fakeToTileLocal(fake, z, x, y) {
     ];
 }
 
-// ----- MapLibre Tile decoding -------------------------------------------------
+// ----- Tile decoding (MLT + MVT input) -----------------------------------------
 
 // GEOMETRY_TYPE of the MapLibre Tile spec: 0..2 are single-part geometries, 3..5 their multi variants.
 const GEOMETRY_TYPE = {
@@ -236,6 +239,36 @@ const GEOMETRY_TYPE = {
 
 const INT32_MAX = 2 ** 31 - 1;
 const INT64_MAX = 2n ** 63n - 1n;
+
+// ----- MVT input --------------------------------------------------------------
+
+// MVT geometry type (1 = point, 2 = line, 3 = polygon) to the pipeline's GEOMETRY_TYPE. A third-party MVT tile is
+// decoded with MapLibre's own @mapbox/vector-tile; loadGeometry() already returns rings of tile-local points, the
+// shape the rest of the pipeline expects, so the only difference from the MLT path is the decoder.
+const MVT_GEOMETRY_TYPE = {
+    1: GEOMETRY_TYPE.POINT,
+    2: GEOMETRY_TYPE.LINESTRING,
+    3: GEOMETRY_TYPE.POLYGON,
+};
+
+function decodeMvtTile(bytes) {
+    const tile = new VectorTile(new Pbf(bytes));
+    return Object.entries(tile.layers).map(([name, layer]) => ({
+        name,
+        extent: layer.extent || TILE_EXTENT,
+        features: Array.from({ length: layer.length }, (_, index) => {
+            const feature = layer.feature(index);
+            return {
+                id: feature.id,
+                geometry: {
+                    type: MVT_GEOMETRY_TYPE[feature.type] ?? GEOMETRY_TYPE.POINT,
+                    coordinates: feature.loadGeometry(),
+                },
+                properties: feature.properties,
+            };
+        }),
+    }));
+}
 
 function isGzip(bytes) {
     return bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
@@ -251,13 +284,18 @@ async function inflate(bytes) {
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-// Decodes one input tile into [{ name, extent, features }]; features carry the MapLibre Tile geometry.
-async function decodeInputTile(buffer) {
+// Decodes one input tile into [{ name, extent, features }]; features carry a geometry in tile-local units.
+// `encoding` selects the decoder: "mlt" for our archives, "mvt" for third-party styles.
+async function decodeInputTile(buffer, encoding) {
     let bytes = new Uint8Array(buffer);
     if (isGzip(bytes)) {
         bytes = await inflate(bytes);
     }
 
+    return encoding === 'mvt' ? decodeMvtTile(bytes) : decodeMltTile(bytes);
+}
+
+function decodeMltTile(bytes) {
     return decodeTile(bytes).map((table) => ({
         name: table.name,
         extent: table.extent || TILE_EXTENT,
@@ -633,13 +671,15 @@ function buildFeatureGeometry(type, fakeRings) {
 }
 
 // `input` is either an array of XYZ tile URL templates, or `{ kind: 'pmtiles' }` (the archive URL is derived from the
-// requested output tile URL). `options.sourceId` labels warnings and `options.maxInputTiles` caps the input tiles read
-// for one output tile (default 64). Only the first URL template is used; extra templates are reported.
+// requested output tile URL). `options.sourceId` labels warnings, `options.encoding` selects the input decoder
+// ("mlt" by default, "mvt" for third-party styles) and `options.maxInputTiles` caps the input tiles read for one
+// output tile (default 64). Only the first URL template is used; extra templates are reported.
 export function createTileReprojector(projection, input, options = {}) {
     const isPmtiles = !Array.isArray(input) && input?.kind === 'pmtiles';
     const templates = Array.isArray(input) ? input : (input?.templates ?? []);
     const sourceId = options.sourceId ?? 'unnamed';
     const maxInputTiles = options.maxInputTiles ?? DEFAULT_MAX_INPUT_TILES;
+    const inputEncoding = options.encoding === 'mvt' ? 'mvt' : 'mlt';
     if (!isPmtiles) {
         if (templates.length === 0) {
             throw new Error(`Source "${sourceId}" has no tile URL templates to reproject.`);
@@ -787,11 +827,11 @@ export function createTileReprojector(projection, input, options = {}) {
 
                 let decoded;
                 try {
-                    decoded = await decodeInputTile(buffer);
+                    decoded = await decodeInputTile(buffer, inputEncoding);
                 } catch (error) {
                     console.warn(
                         `ProjPlugin: source "${sourceId}" input tile ${inputZoom}/${xx}/${yy} could not be decoded `
-                        + `as MapLibre Tile and was skipped: ${error.message}`);
+                        + `as "${inputEncoding}" and was skipped: ${error.message}`);
                     continue;
                 }
 

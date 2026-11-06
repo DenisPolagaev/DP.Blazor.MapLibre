@@ -36,4 +36,12 @@ public sealed class ProjReprojectResult
     /// </summary>
     [JsonPropertyName("transformerId")]
     public string? TransformerId { get; set; }
+
+    /// <summary>
+    /// Ids of the style sources that could not be reprojected and were removed together with their layers — in
+    /// practice raster sources (imagery, hillshade), which have no vector representation. The plugin also logs a
+    /// warning per source; the list lets the host report the loss through its own logging and UI.
+    /// </summary>
+    [JsonPropertyName("droppedSources")]
+    public string[] DroppedSources { get; set; } = [];
 }

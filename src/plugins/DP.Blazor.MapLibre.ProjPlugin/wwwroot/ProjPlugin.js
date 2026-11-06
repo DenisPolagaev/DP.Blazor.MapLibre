@@ -3,9 +3,10 @@
 // Any-projection support for MapLibre GL JS on top of the main-thread proj-wasm pipeline in proj-pipeline.js.
 // There are no Web Workers and no maplibre-proj / backproj.
 //
-// Vector tiles are reprojected as MapLibre Tiles (MLT): the pipeline decodes them with @maplibre/mlt, reprojects the
-// geometry and encodes the result back as MLT. A vector source must therefore declare encoding: "mlt"; there is no
-// MVT path, and a source that does not declare MLT is dropped with a warning.
+// Vector tiles are reprojected as MapLibre Tiles (MLT): the pipeline decodes the input tile with @maplibre/mlt
+// (our own archives) or with @mapbox/vector-tile (third-party MVT styles — the OpenFreeMap basemap cannot be
+// rebuilt as MLT), reprojects the geometry and always encodes the result back as MLT. Since the output is MLT, the
+// rewritten vector source is forced to encoding: "mlt".
 //
 // State ownership:
 // - Process-wide (module scope): the proj-wasm instance (inside proj-pipeline.js), the import map flag, the
@@ -33,7 +34,9 @@ const vendor = {
     projWasm: contentUrl(`${vendorRoot}proj-wasm/dist/proj.mjs`),
     ffiWasm: contentUrl(`${vendorRoot}ffi-wasm/dist/ffi-wasm.mjs`),
     mlt: contentUrl(`${vendorRoot}maplibre-mlt/dist/index.js`),
+    vectorTile: contentUrl(`${vendorRoot}mapbox-vector-tile/index.js`),
     pointGeometry: contentUrl(`${vendorRoot}mapbox-point-geometry/index.js`),
+    pbf: contentUrl(`${vendorRoot}pbf/index.js`),
     pmtiles: contentUrl(`${vendorRoot}pmtiles/pmtiles.mjs`),
     squintCore: contentUrl(`${vendorRoot}squint-cljs/core.js`),
     squintString: contentUrl(`${vendorRoot}squint-cljs/src/squint/string.js`),
@@ -52,7 +55,9 @@ function buildImportMap() {
             'proj-wasm': vendor.projWasm,
             'ffi-wasm': vendor.ffiWasm,
             '@maplibre/mlt': vendor.mlt,
+            '@mapbox/vector-tile': vendor.vectorTile,
             '@mapbox/point-geometry': vendor.pointGeometry,
+            'pbf': vendor.pbf,
             'pmtiles': vendor.pmtiles,
             'squint-cljs/core.js': vendor.squintCore,
             'squint-cljs/src/squint/string.js': vendor.squintString,
@@ -359,20 +364,44 @@ function readProjectionArgs(options) {
 
 const rasterSourceTypes = new Set(['raster', 'raster-dem', 'image', 'video', 'canvas']);
 
-// Vector tiles are MapLibre Tiles only: the reprojection pipeline decodes and encodes MLT. A style
-// source is MLT when it says so explicitly — MapLibre's default is "mvt".
+// The reprojection pipeline always *writes* MapLibre Tiles. On input it reads both MLT (our own archives) and MVT
+// (third-party styles such as the OpenFreeMap basemap, which cannot be rebuilt as MLT), so the source encoding
+// selects the input decoder. MapLibre's default is "mvt".
 const MLT_ENCODING = 'mlt';
+const MVT_ENCODING = 'mvt';
 
 function sourceEncoding(source) {
-    return source?.encoding ?? 'mvt';
+    return source?.encoding === MLT_ENCODING ? MLT_ENCODING : MVT_ENCODING;
 }
 
 function warnSkippedSource(sourceId, reason) {
     console.warn(`ProjPlugin: skipped source "${sourceId}" and its layers: ${reason}.`);
 }
 
+// Normalises a `pmtiles://` source into `__pmtilesArchive`, the archive URL the tile reprojector reads with range
+// requests. Both spellings are accepted: `url: "pmtiles://…"` and a tile template that starts with the scheme.
+// Returns true when the source became a pmtiles archive. Used by the style path and by `reprojectSource`, so a
+// layer added later (fire day stacks, weather hours, …) is reprojected exactly like one declared in the style.
+function extractPmtilesArchive(source) {
+    if (typeof source.url === 'string' && source.url.startsWith('pmtiles://')) {
+        source.__pmtilesArchive = source.url.slice('pmtiles://'.length);
+        delete source.url;
+        return true;
+    }
+
+    if (Array.isArray(source.tiles) && source.tiles.some((t) => typeof t === 'string' && t.startsWith('pmtiles://'))) {
+        const first = source.tiles.find((t) => t.startsWith('pmtiles://'));
+        source.__pmtilesArchive = first.slice('pmtiles://'.length).replace(/\/\{z\}\/\{x\}\/\{y\}.*$/, '');
+        delete source.tiles;
+        return true;
+    }
+
+    return false;
+}
+
 // Returns a copy of the style in which vector sources have explicit tile URLs (TileJSON and pmtiles archives are
-// expanded). Sources that cannot be reprojected are removed together with their layers; every removal is logged.
+// expanded), plus the ids of the sources that had to be dropped. Sources that cannot be reprojected are removed
+// together with their layers; every removal is logged and reported, so the host can surface it.
 async function prepareStyle(rawStyle) {
     const style = JSON.parse(JSON.stringify(rawStyle));
     const sources = style.sources ?? (style.sources = {});
@@ -392,24 +421,8 @@ async function prepareStyle(rawStyle) {
             continue;
         }
 
-        if (sourceEncoding(source) !== MLT_ENCODING) {
-            drop(
-                id,
-                `it is encoded as "${sourceEncoding(source)}"; only MapLibre Tile ("mlt") sources can be `
-                + 'reprojected — rebuild the archive');
-            continue;
-        }
-
         // PMTiles source: keep it; input tiles are read from the archive via range requests.
-        if (typeof source.url === 'string' && source.url.startsWith('pmtiles://')) {
-            source.__pmtilesArchive = source.url.slice('pmtiles://'.length);
-            delete source.url;
-            continue;
-        }
-        if (Array.isArray(source.tiles) && source.tiles.some((t) => typeof t === 'string' && t.startsWith('pmtiles://'))) {
-            const first = source.tiles.find((t) => t.startsWith('pmtiles://'));
-            source.__pmtilesArchive = first.slice('pmtiles://'.length).replace(/\/\{z\}\/\{x\}\/\{y\}.*$/, '');
-            delete source.tiles;
+        if (extractPmtilesArchive(source)) {
             continue;
         }
 
@@ -456,7 +469,7 @@ async function prepareStyle(rawStyle) {
         style.layers = style.layers.filter((layer) => !dropped.has(layer.source));
     }
 
-    return style;
+    return { style, droppedSources: [...dropped] };
 }
 
 // Rewrites one source object in place: GeoJSON coordinates are reprojected, vector tile URLs are routed through a
@@ -469,23 +482,24 @@ async function reprojectSourceObject(source, context) {
         return source;
     }
 
-    if (source.type === 'vector' && sourceEncoding(source) !== MLT_ENCODING) {
-        // reprojectStyleCore drops such sources with a warning before this point; this guard covers the
-        // direct reprojectSource call, where silently returning an MVT source would end up in MapLibre.
-        throw new Error(
-            `Source "${label}" is encoded as "${sourceEncoding(source)}"; ProjPlugin reprojects MapLibre Tile `
-            + '("mlt") vectors only. Rebuild the tiles in MLT and set encoding: "mlt" on the source.');
-    }
+    // A source added after the style was reprojected can be a pmtiles archive (the fire day stacks, weather hours,
+    // vegetation displays, …). Normalise it here, exactly as the style path does, instead of handing MapLibre an
+    // archive URL that only the protomaps protocol could read.
+    extractPmtilesArchive(source);
 
     if (source.type !== 'vector' || !(source.__pmtilesArchive || Array.isArray(source.tiles))) {
         return source;
     }
 
+    // The declared encoding selects the input decoder (MLT for our archives, MVT for third-party styles). The
+    // handler always answers with MLT, so the rewritten source has to say so — otherwise MapLibre would run its MVT
+    // decoder over the reprojected output.
+    const encoding = sourceEncoding(source);
     const isPmtiles = !!source.__pmtilesArchive;
     const reprojectTile = pipeline.createTileReprojector(
         projection,
         isPmtiles ? { kind: 'pmtiles' } : [...source.tiles],
-        { sourceId: label, maxInputTiles });
+        { sourceId: label, maxInputTiles, encoding });
     const protocol = registerSourceProtocol(state, generation, label, sourceKey, reprojectTile);
 
     if (isPmtiles) {
@@ -494,6 +508,7 @@ async function reprojectSourceObject(source, context) {
     } else {
         source.tiles = source.tiles.map((tile) => `${protocol}://${tile}`);
     }
+    source.encoding = MLT_ENCODING;
 
     return source;
 }
@@ -508,7 +523,8 @@ async function reprojectStyleCore(options, state, generation) {
 
     const pipeline = await loadPipeline();
     const projection = await resolveProjection(args);
-    const style = await prepareStyle(options.style);
+    const prepared = await prepareStyle(options.style);
+    const style = prepared.style;
 
     for (const [sourceId, source] of Object.entries(style.sources ?? {})) {
         await reprojectSourceObject(source, {
@@ -527,6 +543,9 @@ async function reprojectStyleCore(options, state, generation) {
         style,
         bounds: projection.bounds ?? [[-180, -85], [180, 85]],
         transformerId: storeTransformer(state, projection, args.crs, args.transformerId),
+        // Sources the plugin could not reproject (raster: the basemap style ships a raster hillshade next to its
+        // vector tiles). The host logs them: in projected mode those layers are simply not on the map.
+        droppedSources: prepared.droppedSources,
     };
 }
 
@@ -558,6 +577,7 @@ function toResultDto(result) {
         // Not populated by the current pipeline.
         maxBounds: null,
         transformerId: result.transformerId,
+        droppedSources: result.droppedSources ?? [],
     };
 }
 

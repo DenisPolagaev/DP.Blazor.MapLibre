@@ -15,7 +15,7 @@ dotnet add reference ../../src/plugins/DP.Blazor.MapLibre.ProjPlugin/DP.Blazor.M
 - MapLibre GL JS must be loaded (the core `MapLibre` component handles this).
 - The map **must** be created with `RenderWorldCopies = false` (see `MapOptions.RenderWorldCopies`): the fake coordinate space does not tile.
 - The plugin forces `projection: { type: "mercator" }` on the reprojected style.
-- Vector sources must be **MapLibre Tiles** and declare `encoding: "mlt"`. There is no MVT path: a vector source without that flag is dropped with a warning (MapLibre's default encoding is `mvt`).
+- Vector sources may be **MapLibre Tiles** (`encoding: "mlt"`, everything this portal serves) or **MVT** (third-party styles: the OpenFreeMap basemap has no MLT build). MVT is decoded with MapLibre's own `@mapbox/vector-tile` and re-encoded, so the handler always answers with MLT and the rewritten source is forced to `encoding: "mlt"`. Raster sources cannot be reprojected and are dropped with a warning.
 - Geographic CRS (for example `EPSG:4326`) and interrupted projections (for example Goode Homolosine) are not supported.
 
 ## Register the plugin
@@ -113,17 +113,45 @@ var fake = await _proj.TransformPointAsync(new LngLat(-77.0, 38.9), _transformer
 ## Vector tiles
 
 Vector tile sources in the style are rewritten to a custom protocol handler automatically. The handler fetches the
-input Mercator tiles, decodes them as MapLibre Tiles (`@maplibre/mlt`), reprojects the geometry and encodes the result
-back as MLT, all on the main thread. No extra configuration is required, but the source must declare
-`encoding: "mlt"`:
+input Mercator tiles, decodes them (MapLibre Tile with `@maplibre/mlt`, or MVT with MapLibre's own
+`@mapbox/vector-tile` for third-party styles), reprojects the geometry and encodes the result back as MLT, all on the
+main thread:
 
 ```json
 "weather-grid": { "type": "vector", "encoding": "mlt", "url": "pmtiles://https://example/weather.pmtiles" }
 ```
 
-A vector source without `encoding: "mlt"` (an MVT tileset, or a source relying on MapLibre's `mvt` default) cannot be
-reprojected: it is removed from the style together with its layers and a warning names the source. Rebuild such a
-tileset as MLT — the projection plugin deliberately carries no MVT decoder.
+`encoding` selects the input decoder: `"mlt"` (default for this portal's archives, also what single-source
+reprojection assumes) or `"mvt"` (the MapLibre default, used by the OpenFreeMap basemap the Map API serves). Whatever
+came in, the handler answers with MLT and the rewritten source is forced to `encoding: "mlt"` — MapLibre decodes the
+protocol output with its MLT decoder.
+
+Raster sources (`raster`, `raster-dem`, `image`, `video`, `canvas`) cannot be reprojected: they are removed from the
+style together with their layers, and `ProjReprojectResult.DroppedSources` names them (the basemap style ships a raster
+hillshade next to its vector tiles, for example).
+
+## Adding a source after the style was reprojected
+
+`ReprojectSourceAsync` reprojects a single vector or GeoJSON source, for a layer that is created later than the style:
+
+```csharp
+var result = await _proj.ReprojectSourceAsync(new ProjSourceReprojectOptions
+{
+    SourceId = "fire-day",
+    Source = new JsonObject
+    {
+        ["type"] = "vector",
+        ["encoding"] = "mlt",                    // input decoder: "mlt" (ours) or "mvt" (third-party)
+        ["url"] = "pmtiles://https://example/fire.pmtiles",   // or "tiles": [ … ]
+    },
+    Crs = "ESRI:54030",
+});
+await _map.UpsertTileSource("fire-day", result.Source);
+```
+
+Both spellings of a PMTiles source are accepted (`url` or the first `tiles` entry starting with `pmtiles://`): the
+handler reads the archive through range requests, exactly like the style path. The returned source always declares
+`encoding: "mlt"`.
 
 ## Browser support and import maps
 
@@ -143,8 +171,10 @@ var importMap = await _proj.GetImportMapAsync();      // resolved specifier -> _
 
 - **Labels/symbols**: MapLibre's collision detection assumes Mercator, so text placement is slightly wrong in distorted areas.
 - **`queryRenderedFeatures`** returns fake lon/lat — use `InverseTransformCoordsAsync`.
-- **Dynamic sources**: `ReprojectStyleAsync` reprojects the sources present in the style you pass. Sources added later (for example by the layer services) are not reprojected automatically.
-- **MVT sources**: only MapLibre Tiles (`encoding: "mlt"`) can be reprojected; an MVT source is dropped with a warning. The plugin ships no MVT decoder.
+- **Dynamic sources**: `ReprojectStyleAsync` reprojects the sources present in the style you pass. Sources added later (for example by the layer services) are not reprojected automatically — call `ReprojectSourceAsync` for them.
+- **Format**: the handler reads MLT and MVT and always writes MLT. Our own archives stay MLT — MVT exists only as an input decoder for third-party styles (the OpenFreeMap basemap), not as an output format.
+- **Raster sources** cannot be reprojected and are dropped with a warning; `ProjReprojectResult.DroppedSources` lists them.
+- **Tile scheme**: input tiles are always read as `xyz`; a source that declares `scheme: "tms"` is reprojected from the wrong rows.
 - The vendored package tree is updated manually via `scripts/vendor-proj.mjs`; `0.0.x`/alpha upstream versions may change their module layout.
 
 ## Related topics

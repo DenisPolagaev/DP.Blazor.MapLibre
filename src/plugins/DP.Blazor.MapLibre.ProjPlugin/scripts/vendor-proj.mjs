@@ -8,10 +8,12 @@
 // DP.Blazor.MapLibre.PmtilesPlugin so that both plugins ship the same file. The output tree is served
 // as a static web asset under _content/ProjPlugin/vendor and wired up by ProjPlugin.js.
 //
-// There is no MVT dependency any more: the reprojection pipeline decodes and encodes MapLibre Tiles
-// with @maplibre/mlt. That package's dist/*.js uses extensionless relative specifiers (TypeScript's
-// "bundler" module resolution), which a browser cannot resolve, so its tree is normalized to
-// explicit .js specifiers after the download (see normalizeEsmSpecifiers).
+// There is no MVT codec of our own any more: our archives are MapLibre Tiles and the pipeline encodes MLT with
+// @maplibre/mlt. `@mapbox/vector-tile` + `pbf` are vendored again as the *input* decoder only, so a third-party MVT
+// style (the OpenFreeMap basemap) can still be reprojected — the output is always MLT.
+// @maplibre/mlt's dist/*.js uses extensionless relative specifiers (TypeScript's "bundler" module resolution),
+// which a browser cannot resolve, so its tree is normalized to explicit .js specifiers after the download
+// (see normalizeEsmSpecifiers).
 //
 // The output directory is deleted and rebuilt on every run.
 //
@@ -51,7 +53,11 @@ const packages = [
   // MapLibre Tile decode/encode (vector tile reprojection). Its only runtime dependency is
   // @mapbox/point-geometry, which is vendored below.
   ['@maplibre/mlt', '1.3.0', 'maplibre-mlt'],
+  // Third-party MVT input decoder: the OpenFreeMap basemap is MVT and cannot be rebuilt as MLT, so the
+  // reprojection pipeline reads it with MapLibre's own decoder and writes MLT.
+  ['@mapbox/vector-tile', '2.0.4', 'mapbox-vector-tile'],
   ['@mapbox/point-geometry', '1.1.0', 'mapbox-point-geometry'],
+  ['pbf', '4.0.1', 'pbf'],
 ];
 
 // Packages whose dist tree is TypeScript output with extensionless relative imports. Browsers do not

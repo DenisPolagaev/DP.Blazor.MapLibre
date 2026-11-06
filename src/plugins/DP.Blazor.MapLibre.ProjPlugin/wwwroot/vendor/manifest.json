@@ -1,5 +1,5 @@
 {
-  "generated": "2026-11-05T10:26:43.141Z",
+  "generated": "2026-11-06T03:27:39.197Z",
   "packages": [
     {
       "name": "proj-wasm",
@@ -44,10 +44,22 @@
       "files": 87
     },
     {
+      "name": "@mapbox/vector-tile",
+      "version": "2.0.4",
+      "dir": "mapbox-vector-tile",
+      "files": 3
+    },
+    {
       "name": "@mapbox/point-geometry",
       "version": "1.1.0",
       "dir": "mapbox-point-geometry",
       "files": 3
+    },
+    {
+      "name": "pbf",
+      "version": "4.0.1",
+      "dir": "pbf",
+      "files": 7
     },
     {
       "name": "pmtiles",

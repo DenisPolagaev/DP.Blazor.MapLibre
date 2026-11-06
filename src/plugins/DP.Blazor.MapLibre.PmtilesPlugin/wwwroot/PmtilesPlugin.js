@@ -12,6 +12,9 @@
 
 const SHARED_STATE_KEY = '__blazorMapLibrePmtiles';
 
+// PMTiles tile types that MapLibre can decode as a vector source, with the source `encoding` it needs.
+const VECTOR_TILE_ENCODINGS = { 1: 'mvt', 6: 'mlt' };
+
 // The vendored pmtiles FetchSource throws `Bad response code: <status>` for HTTP statuses >= 300.
 const BAD_RESPONSE_PATTERN = /^Bad response code: (\d{3})$/;
 
@@ -75,6 +78,40 @@ async function registerProtocol() {
 
     const { Protocol } = await import('./pmtiles/pmtiles.mjs');
     globalThis.maplibregl.addProtocol('pmtiles', createTileHandler(new Protocol()));
+}
+
+/**
+ * Reads the PMTiles header at `url` and reports the archive's tile type, so the host can set the MapLibre source
+ * `encoding` instead of assuming a format (MapLibre's default is `mvt`, every archive this portal builds is `mlt`).
+ * One range request; the result is cached per URL for the page lifetime — an archive URL either never changes or is
+ * versioned with `?v=`. A failed read is not cached, so a retry can succeed.
+ *
+ * @returns {Promise<{tileType: number, encoding: string|null, minZoom: number, maxZoom: number}>}
+ */
+export async function getArchiveInfo(url) {
+    const shared = sharedState();
+    shared.archiveInfo ??= new Map();
+
+    if (!shared.archiveInfo.has(url)) {
+        const pending = (async () => {
+            const { PMTiles } = await import('./pmtiles/pmtiles.mjs');
+            const header = await new PMTiles(url).getHeader();
+            return {
+                tileType: header.tileType,
+                encoding: VECTOR_TILE_ENCODINGS[header.tileType] ?? null,
+                minZoom: header.minZoom,
+                maxZoom: header.maxZoom,
+            };
+        })();
+        pending.catch(() => {
+            if (shared.archiveInfo.get(url) === pending) {
+                shared.archiveInfo.delete(url);
+            }
+        });
+        shared.archiveInfo.set(url, pending);
+    }
+
+    return shared.archiveInfo.get(url);
 }
 
 /**

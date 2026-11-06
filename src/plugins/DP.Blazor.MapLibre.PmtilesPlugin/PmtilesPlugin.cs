@@ -36,6 +36,33 @@ public sealed class PmtilesPlugin : MapLibreJsPlugin
         _protocolAcquired = true;
     }
 
+    #endregion
+
+    #region Public Methods
+
+    /// <summary>
+    /// Reads the header of a PMTiles archive (one range request, cached per URL in the page) and reports its tile type,
+    /// so the host can pick the MapLibre source <c>encoding</c> instead of assuming a format. Returns
+    /// <c>null</c> when the header cannot be read.
+    /// </summary>
+    /// <param name="archiveUrl">Archive URL without the <c>pmtiles://</c> prefix and without a tile template.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<PmtilesArchiveInfo?> GetArchiveInfoAsync(
+        string archiveUrl,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+        ArgumentException.ThrowIfNullOrWhiteSpace(archiveUrl);
+        return await Module.InvokeAsync<PmtilesArchiveInfo?>(
+            "getArchiveInfo",
+            cancellationToken,
+            archiveUrl);
+    }
+
+    #endregion
+
+    #region Lifecycle Overrides
+
     /// <inheritdoc />
     protected override async ValueTask OnModuleDisposingAsync()
     {

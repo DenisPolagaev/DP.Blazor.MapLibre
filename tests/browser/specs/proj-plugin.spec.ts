@@ -228,10 +228,23 @@ test.describe('ProjPlugin', () => {
         crs: 'ESRI:54030',
       });
 
+      // Overlays added after the style was reprojected arrive as pmtiles archives; the single-source path must
+      // reroute them through the archive reader just like the style path does.
+      const archive = await plugin.reprojectSource({
+        sourceId: 'archive',
+        source: {
+          type: 'vector',
+          encoding: 'mlt',
+          tiles: ['pmtiles://http://127.0.0.1:4173/fire.pmtiles?v=2/{z}/{x}/{y}'],
+        },
+        crs: 'ESRI:54030',
+      });
+
       return {
         aTiles: a.source.tiles,
         bTiles: b.source.tiles,
         geoCoord: geo.source.data.features[0].geometry.coordinates,
+        archiveTiles: archive.source.tiles,
       };
     });
 
@@ -240,6 +253,9 @@ test.describe('ProjPlugin', () => {
     // Distinct layers must get distinct protocol handlers (not the first source's).
     expect(result.aTiles[0].split('://')[0]).not.toBe(result.bTiles[0].split('://')[0]);
     expect(result.geoCoord[0]).not.toBeCloseTo(-77, 1);
+    expect(result.archiveTiles).toHaveLength(1);
+    expect(result.archiveTiles[0]).toMatch(/^reproj-/);
+    expect(result.archiveTiles[0]).toContain('http://127.0.0.1:4173/fire.pmtiles?v=2/{z}/{x}/{y}');
   });
 
   test('releaseProjectionResources and getImportMap are wired', async ({ page }) => {
@@ -255,7 +271,8 @@ test.describe('ProjPlugin', () => {
         ffiWasm: importMap.imports['ffi-wasm'],
         mlt: importMap.imports['@maplibre/mlt'],
         pointGeometry: importMap.imports['@mapbox/point-geometry'],
-        legacyMvt: [importMap.imports['@mapbox/vector-tile'], importMap.imports['pbf']].filter(Boolean),
+        // The MVT decoder is vendored for third-party styles (the OpenFreeMap basemap), not for our own archives.
+        mvtInput: [importMap.imports['@mapbox/vector-tile'], importMap.imports['pbf']].filter(Boolean),
       };
     });
 
@@ -264,7 +281,9 @@ test.describe('ProjPlugin', () => {
     expect(result.ffiWasm).toContain('_content/ProjPlugin/vendor/ffi-wasm/');
     expect(result.mlt).toContain('_content/ProjPlugin/vendor/maplibre-mlt/');
     expect(result.pointGeometry).toContain('_content/ProjPlugin/vendor/mapbox-point-geometry/');
-    expect(result.legacyMvt).toEqual([]);
+    expect(result.mvtInput).toHaveLength(2);
+    expect(result.mvtInput[0]).toContain('_content/ProjPlugin/vendor/mapbox-vector-tile/');
+    expect(result.mvtInput[1]).toContain('_content/ProjPlugin/vendor/pbf/');
   });
 
   test('decodes and encodes MLT through the import map', async ({ page }) => {

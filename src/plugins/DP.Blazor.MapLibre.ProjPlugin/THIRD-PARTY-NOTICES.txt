@@ -23,6 +23,12 @@ own LICENSE file; the license terms of those projects apply to the vendored file
       (MapLibre Tile decoder/encoder; see @maplibre/mlt/LICENSE.txt)
   @mapbox/point-geometry     1.1.0          ISC
       https://github.com/mapbox/point-geometry
+  @mapbox/vector-tile        2.0.4          ISC
+      https://github.com/mapbox/vector-tile-js
+      (MVT input decoder for third-party styles such as the OpenFreeMap basemap;
+      see @mapbox/vector-tile/LICENSE.txt)
+  pbf                        4.0.1          BSD-3-Clause
+      https://github.com/mapbox/pbf
   pmtiles                    not recorded   BSD-3-Clause
       https://github.com/protomaps/PMTiles
       Copyright (c) 2021 Brandon Liu / Protomaps LLC
