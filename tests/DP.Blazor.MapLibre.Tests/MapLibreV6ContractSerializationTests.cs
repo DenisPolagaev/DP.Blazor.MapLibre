@@ -16,7 +16,7 @@ using Xunit;
 namespace DP.Blazor.MapLibre.Tests;
 
 /// <summary>
-/// Contract tests: C# JSON property names and shapes must match MapLibre GL JS 6.11
+/// Contract tests: C# JSON property names and shapes must match MapLibre GL JS 6.19
 /// (<c>MapOptions</c>, sources, controls, RequestParameters, compact event DTOs).
 /// </summary>
 public class MapLibreV6ContractSerializationTests
@@ -37,6 +37,7 @@ public class MapLibreV6ContractSerializationTests
     [Fact]
     public void MapOptions_V6Properties_UseMapLibreJsonNames_AndRoundTrip()
     {
+#pragma warning disable CS0618 // aroundCenter is deprecated by MapLibre 6.15 but still accepted; this test pins the legacy wire name.
         var options = new MapOptions
         {
             Zoom = 3,
@@ -50,6 +51,7 @@ public class MapLibreV6ContractSerializationTests
             ReduceMotion = false,
             ValidateStyle = true,
         };
+#pragma warning restore CS0618
 
         Assert.Equal(4, options.ZoomLevelsToOverscale);
 
@@ -68,7 +70,9 @@ public class MapLibreV6ContractSerializationTests
         Assert.Equal(-0.5, restored.PitchSpeed);
         Assert.Equal(20, restored.AnisotropicFilterPitch);
         Assert.Equal("auto", restored.TerrainSkirtLength);
+#pragma warning disable CS0618 // Legacy aroundCenter round-trip.
         Assert.True(restored.AroundCenter);
+#pragma warning restore CS0618
     }
 
     [Theory]

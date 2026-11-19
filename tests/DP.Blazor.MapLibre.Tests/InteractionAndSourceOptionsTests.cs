@@ -59,7 +59,9 @@ public class InteractionAndSourceOptionsTests
             PitchSpeed = -0.5,
             AnisotropicFilterPitch = 20,
             TerrainSkirtLength = "auto",
+#pragma warning disable CS0618 // Legacy aroundCenter is still serialized; the wire name is pinned here.
             AroundCenter = true
+#pragma warning restore CS0618
         };
 
         var json = JsonSerializer.Serialize(options, MapLibreJsonSerializer.Options);

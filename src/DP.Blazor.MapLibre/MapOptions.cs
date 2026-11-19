@@ -183,6 +183,14 @@ public class MapOptions
     public bool? DoubleClickZoom { get; set; }
 
     /// <summary>
+    /// The initial global state of the style: values the style's <c>global-state</c> expressions read,
+    /// overriding the style defaults (MapLibre 6.14+).
+    /// </summary>
+    [JsonPropertyName("globalState")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, object?>? GlobalState { get; set; }
+
+    /// <summary>
     /// Enables or disables the \"drag to pan\" interaction. Default is true.
     /// May also be configured via <see cref="DragPanOptions"/> for advanced behavior.
     /// </summary>
@@ -192,12 +200,13 @@ public class MapOptions
     public OneOf<bool, DragPanOptions>? DragPan { get; set; }
 
     /// <summary>
-    /// Enables or disables the \"drag to rotate\" interaction.
-    /// Default is true.
+    /// Enables or disables the \"drag to rotate\" interaction, or configures what it turns around
+    /// (<see cref="DragRotateOptions"/>, MapLibre 6.15+). Default is true.
     /// </summary>
     [JsonPropertyName("dragRotate")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? DragRotate { get; set; }
+    [JsonConverter(typeof(OneOfJsonConverter<bool, DragRotateOptions>))]
+    public OneOf<bool, DragRotateOptions>? DragRotate { get; set; }
 
     /// <summary>
     /// Sets the elevation (in meters above sea level) of the initial centerpoint of the map.
@@ -526,8 +535,13 @@ public class MapOptions
     /// <summary>
     /// When true, rotation uses around-center interaction model.
     /// </summary>
+    /// <remarks>
+    /// Deprecated by MapLibre GL JS 6.15. Use
+    /// <c>DragRotate = new DragRotateOptions { Around = "center" }</c> instead.
+    /// </remarks>
     [JsonPropertyName("aroundCenter")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [Obsolete("MapLibre GL JS 6.15 deprecated aroundCenter. Set DragRotate = new DragRotateOptions { Around = \"center\" } instead.")]
     public bool? AroundCenter { get; set; }
 
     /// <summary>

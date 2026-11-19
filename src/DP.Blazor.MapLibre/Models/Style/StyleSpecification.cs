@@ -75,6 +75,14 @@ public sealed class StyleSpecification
     public ProjectionSpecification? Projection { get; set; }
 
     /// <summary>
+    /// Default values of the style's <c>global-state</c> expressions: property name to
+    /// <c>{ "default": value }</c> (MapLibre style spec <c>state</c>).
+    /// </summary>
+    [JsonPropertyName("state")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, object?>? State { get; set; }
+
+    /// <summary>
     /// Serializes to a <see cref="JsonObject"/> suitable for <see cref="MapLibre.SetStyle"/>.
     /// </summary>
     public JsonObject ToJsonObject(JsonSerializerOptions? options = null)

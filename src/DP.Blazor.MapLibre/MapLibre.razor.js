@@ -93,6 +93,118 @@ export function getRtlTextPluginStatus() {
 }
 
 /**
+ * Registers a pass-through Trusted Types policy with MapLibre, so the library can keep creating DOM nodes
+ * on a page that enforces Trusted Types (MapLibre 6.19+). Page-wide, like the RTL plugin.
+ *
+ * The policy is created with the given name, which must be allowed by the page's
+ * `Content-Security-Policy: trusted-types <name>` directive. Passing `null` detaches the policy
+ * (`setTrustedTypesPolicy(undefined)`).
+ *
+ * @param {string|null} policyName - The Trusted Types policy name, or null to detach.
+ */
+export function setTrustedTypesPolicy(policyName) {
+    if (!policyName) {
+        globalThis.maplibregl.setTrustedTypesPolicy?.(undefined);
+        return;
+    }
+
+    if (typeof globalThis.maplibregl?.setTrustedTypesPolicy !== 'function') {
+        throw new Error('This MapLibre GL JS build does not support setTrustedTypesPolicy (6.19+).');
+    }
+
+    const factory = globalThis.trustedTypes;
+    if (!factory?.createPolicy) {
+        throw new Error(
+            'Trusted Types are not available in this browser. A page must enforce them (require-trusted-types-for) before a policy can be created.');
+    }
+
+    const cache = globalThis.__blazorMapLibreTrustedTypesPolicies ??= {};
+    let policy = cache[policyName];
+    if (!policy) {
+        // A name may be registered only once per document; a second createPolicy with it throws.
+        policy = factory.createPolicy(policyName, {
+            createHTML: (value) => value,
+            createScript: (value) => value,
+            createScriptURL: (value) => value,
+            createURL: (value) => value,
+        });
+        cache[policyName] = policy;
+    }
+
+    globalThis.maplibregl.setTrustedTypesPolicy(policy);
+}
+
+/** Resolves a global function by name; dotted paths such as `app.proj.forward` are supported. */
+function resolveGlobalFunction(name, role) {
+    if (typeof name !== 'string' || name.length === 0) {
+        throw new Error(`addProjection requires a global function name for the ${role} projection.`);
+    }
+
+    const fn = name.split('.').reduce((value, part) => value?.[part], globalThis);
+    if (typeof fn !== 'function') {
+        throw new Error(
+            `addProjection: globalThis has no function "${name}" for the ${role} projection. Register the converter on globalThis first (for example with proj4).`);
+    }
+
+    return fn;
+}
+
+/**
+ * Registers a planar CRS with its own quad tile grid so a style can select it by name
+ * (`projection: { type: 'EPSG:2193' }`), MapLibre 6.15+ (experimental).
+ *
+ * MapLibre does not reproject tile content: every tile source of such a map must already be cut in the
+ * registered grid. The coordinate converter is a JavaScript function pair, so it is passed by the names of
+ * functions registered on `globalThis` — a .NET callback would be called for every coordinate.
+ *
+ * @param {Object} crs - `{ name, tileMatrixSet: { origin: [x, y], extentAtZoom0 }, forwardFunction,
+ *   inverseFunction?, definition? }`.
+ */
+export function addProjection(crs) {
+    if (!globalThis.maplibregl?.addProjection) {
+        throw new Error('This MapLibre GL JS build does not support addProjection (6.15+).');
+    }
+
+    if (!crs || typeof crs.name !== 'string' || crs.name.length === 0 || !crs.tileMatrixSet) {
+        throw new Error('addProjection requires a name and a tileMatrixSet.');
+    }
+
+    const { origin, extentAtZoom0 } = crs.tileMatrixSet;
+    if (!Array.isArray(origin) || origin.length !== 2 || !(extentAtZoom0 > 0)) {
+        throw new Error('addProjection requires tileMatrixSet.origin [x, y] and a positive tileMatrixSet.extentAtZoom0.');
+    }
+
+    const definition = {
+        name: crs.name,
+        projection: {
+            forward: resolveGlobalFunction(crs.forwardFunction, 'forward'),
+            inverse: crs.inverseFunction ? resolveGlobalFunction(crs.inverseFunction, 'inverse') : null,
+        },
+        tileMatrixSet: { origin: [origin[0], origin[1]], extentAtZoom0 },
+    };
+
+    if (typeof crs.definition === 'string' && crs.definition.length > 0) {
+        definition.definition = crs.definition;
+    }
+
+    globalThis.maplibregl.addProjection(definition);
+}
+
+/**
+ * Removes a projection registered with {@link addProjection}; maps already using it keep working until their
+ * projection changes (MapLibre 6.15+).
+ *
+ * @param {string} name - The name the projection was registered with; it must contain a colon.
+ */
+export function removeProjection(name) {
+    if (!globalThis.maplibregl?.removeProjection) {
+        throw new Error('This MapLibre GL JS build does not support removeProjection (6.15+).');
+    }
+
+    globalThis.maplibregl.removeProjection(name);
+}
+
+/**
  * Cuts the GeoJSON source at the antimeridian if the option is enabled.
  *
  * @param {string} container - The identifier for the map container instance.
@@ -1111,6 +1223,51 @@ export function showTileBoundaries(container, shouldShowTileBoundaries) {
 }
 
 /**
+ * Shows collision boxes of symbols for debug purposes.
+ * @param {string} container - The identifier for the map container instance.
+ * @param {boolean} shouldShowCollisionBoxes
+ */
+export function showCollisionBoxes(container, shouldShowCollisionBoxes) {
+    mapInstances[container].showCollisionBoxes = shouldShowCollisionBoxes;
+}
+
+/**
+ * Shows the overdraw inspector for debug purposes.
+ * @param {string} container - The identifier for the map container instance.
+ * @param {boolean} shouldShowOverdrawInspector
+ */
+export function showOverdrawInspector(container, shouldShowOverdrawInspector) {
+    mapInstances[container].showOverdrawInspector = shouldShowOverdrawInspector;
+}
+
+/**
+ * Shows the map padding for debug purposes.
+ * @param {string} container - The identifier for the map container instance.
+ * @param {boolean} shouldShowPadding
+ */
+export function showPadding(container, shouldShowPadding) {
+    mapInstances[container].showPadding = shouldShowPadding;
+}
+
+/**
+ * Shows source vertices for debug purposes (`map.vertices`).
+ * @param {string} container - The identifier for the map container instance.
+ * @param {boolean} shouldShowVertices
+ */
+export function showVertices(container, shouldShowVertices) {
+    mapInstances[container].vertices = shouldShowVertices;
+}
+
+/**
+ * Enables continuous repainting for performance analysis (`map.repaint`).
+ * @param {string} container - The identifier for the map container instance.
+ * @param {boolean} enabled
+ */
+export function setContinuousRepaint(container, enabled) {
+    mapInstances[container].repaint = enabled;
+}
+
+/**
  * Adds a sprite to the specified map container.
  *
  * @function
@@ -2031,6 +2188,22 @@ export function getPitch(container) {
 }
 
 /**
+ * Changes the tile level-of-detail behaviour of a source (or of every source when the id is omitted).
+ * @param {string} container - The identifier of the map container.
+ * @param {number} maxZoomLevelsOnScreen - Maximum number of distinct zoom levels on screen at a time.
+ * @param {number} tileCountMaxMinRatio - Ratio of the maximum to the minimum number of loaded tiles at high pitch.
+ * @param {string|null} sourceId - The source to change, or null for all sources.
+ */
+export function setSourceTileLodParams(container, maxZoomLevelsOnScreen, tileCountMaxMinRatio, sourceId) {
+    if (sourceId === undefined || sourceId === null) {
+        mapInstances[container].setSourceTileLodParams(maxZoomLevelsOnScreen, tileCountMaxMinRatio);
+        return;
+    }
+
+    mapInstances[container].setSourceTileLodParams(maxZoomLevelsOnScreen, tileCountMaxMinRatio, sourceId);
+}
+
+/**
  * Retrieves the map's pixel ratio.
  * Note: The actual applied pixel ratio may be lower than specified due to max canvas size restrictions.
  * @param {string} container - The identifier of the map container.
@@ -2038,6 +2211,15 @@ export function getPitch(container) {
  */
 export function getPixelRatio(container) {
     return mapInstances[container].getPixelRatio();
+}
+
+/**
+ * Sets the pixel ratio used to scale the canvas resolution.
+ * @param {string} container - The identifier of the map container.
+ * @param {number} pixelRatio - The new pixel ratio.
+ */
+export function setPixelRatio(container, pixelRatio) {
+    mapInstances[container].setPixelRatio(pixelRatio);
 }
 
 /**
@@ -2107,6 +2289,15 @@ export function getGlobalStateProperty(container, propertyName) {
 }
 
 /**
+ * Returns the whole global state of the style (MapLibre 6.14+).
+ * @param {string} container - The map container identifier.
+ * @returns {Object} The global state as property name to value.
+ */
+export function getGlobalState(container) {
+    return mapInstances[container].getGlobalState();
+}
+
+/**
  * Retrieves the style's sprite as a list of objects.
  * @param {string} container - The identifier of the map container.
  * @returns {Array} The list of sprite objects for the style.
@@ -2159,6 +2350,42 @@ export function getVerticalFieldOfView(container) {
  */
 export function getZoom(container) {
     return mapInstances[container].getZoom();
+}
+
+/**
+ * Returns the zoom snap step.
+ * @param {string} container - The identifier of the map container.
+ * @returns {number} The zoom snap value.
+ */
+export function getZoomSnap(container) {
+    return mapInstances[container].getZoomSnap();
+}
+
+/**
+ * Sets the zoom snap step (`zoomSnap`).
+ * @param {string} container - The identifier of the map container.
+ * @param {number} zoomSnap - The zoom step.
+ */
+export function setZoomSnap(container, zoomSnap) {
+    mapInstances[container].setZoomSnap(zoomSnap);
+}
+
+/**
+ * Returns the pitch above which anisotropic filtering applies to raster layers.
+ * @param {string} container - The identifier of the map container.
+ * @returns {number} The anisotropic filter pitch in degrees.
+ */
+export function getAnisotropicFilterPitch(container) {
+    return mapInstances[container].getAnisotropicFilterPitch();
+}
+
+/**
+ * Sets the pitch above which anisotropic filtering applies to raster layers.
+ * @param {string} container - The identifier of the map container.
+ * @param {number} pitch - The anisotropic filter pitch in degrees.
+ */
+export function setAnisotropicFilterPitch(container, pitch) {
+    mapInstances[container].setAnisotropicFilterPitch(pitch);
 }
 
 /**
@@ -2897,6 +3124,22 @@ export function setTransformRequest(container, dotnetReference) {
     }
 
     map.setTransformRequest(createTransformRequestFn(dotnetReference));
+}
+
+/**
+ * Reports whether a transform request is installed, the C#-friendly view of MapLibre 6.19
+ * `Map#getTransformRequest`: the method returns the request function itself, which cannot cross the
+ * JS interop boundary.
+ * @param {string} container - The map container.
+ * @returns {boolean} True when the map has a transform request (a .NET callback, a JS policy or a MapOptions callback).
+ */
+export function hasTransformRequest(container) {
+    const map = requireMap(container, 'hasTransformRequest');
+    if (typeof map.getTransformRequest !== 'function') {
+        return false;
+    }
+
+    return !!map.getTransformRequest();
 }
 
 /**

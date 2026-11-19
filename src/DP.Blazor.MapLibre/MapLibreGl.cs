@@ -7,7 +7,7 @@ public static class MapLibreGl
 {
     /// <summary>
     /// Version of the MapLibre GL JS bundle shipped in <c>wwwroot/maplibre-gl/dist</c>
-    /// (for example <c>6.11.2</c>). It is appended to the ESM import as a cache-busting
+    /// (for example <c>6.19.0</c>). It is appended to the ESM import as a cache-busting
     /// query so hosts that cache static content immutably still pick up new bundles.
     /// </summary>
     public static string Version { get; } = ReadVersion();

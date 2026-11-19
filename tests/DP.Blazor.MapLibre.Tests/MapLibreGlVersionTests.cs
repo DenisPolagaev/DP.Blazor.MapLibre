@@ -40,11 +40,20 @@ public class MapLibreGlVersionTests
     [Theory]
     [InlineData("maplibre-gl.mjs")]
     [InlineData("maplibre-gl-worker.mjs")]
-    [InlineData("maplibre-gl-shared.mjs")]
     [InlineData("maplibre-gl.css")]
     public void BundleArtifact_IsCommitted(string fileName)
     {
         var artifact = Path.Combine(ProjectDirectory(), "wwwroot", "maplibre-gl", "dist", fileName);
         Assert.True(File.Exists(artifact), $"Expected bundled MapLibre GL JS artifact {artifact} to be committed.");
     }
+
+    [Fact]
+    public void Bundle_DoesNotShip_TheDeprecatedSharedModule()
+    {
+        // MapLibre 6.13 made the worker self-contained; maplibre-gl-shared.mjs is an empty deprecated file
+        // kept only so existing copy steps do not fail. We do not copy it and must not commit it again.
+        var artifact = Path.Combine(ProjectDirectory(), "wwwroot", "maplibre-gl", "dist", "maplibre-gl-shared.mjs");
+        Assert.False(File.Exists(artifact), $"{artifact} is deprecated since MapLibre 6.13 and must not be shipped.");
+    }
+
 }

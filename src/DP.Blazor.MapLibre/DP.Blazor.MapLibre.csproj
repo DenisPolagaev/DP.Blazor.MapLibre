@@ -66,7 +66,7 @@
             <_TsPackageJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\ts\package.json'))</_TsPackageJson>
         </PropertyGroup>
         <Error Condition="'$(MapLibreGlVersion)' == ''"
-               Text="maplibre-gl.version is empty or missing. It must contain the bundled MapLibre GL JS version, e.g. 6.11.2." />
+               Text="maplibre-gl.version is empty or missing. It must contain the bundled MapLibre GL JS version, e.g. 6.19.0." />
         <Error Condition="!$(_LibManJson.Contains('&quot;maplibre-gl@$(MapLibreGlVersion)&quot;'))"
                Text="libman.json must reference maplibre-gl@$(MapLibreGlVersion) to match maplibre-gl.version." />
         <Error Condition="!$(_TsPackageJson.Contains('&quot;maplibre-gl&quot;: &quot;$(MapLibreGlVersion)&quot;'))"
