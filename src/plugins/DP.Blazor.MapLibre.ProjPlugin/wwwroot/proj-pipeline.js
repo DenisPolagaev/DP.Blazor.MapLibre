@@ -864,29 +864,43 @@ export function createTileReprojector(projection, input, options = {}) {
             }
         }
 
-        const layers = [];
+        // Every vertex of the output tile goes through the CRS transform in one call: a call per feature paid the
+        // proj-wasm round trip hundreds of times per tile. The batch is split back by the recorded offsets.
+        const pending = [];
+        const batch = [];
         for (const [layerName, layerMap] of collected) {
-            const features = [];
             for (const entry of layerMap.values()) {
                 const flat = entry.rings.flat();
                 if (flat.length === 0) {
                     continue;
                 }
-
-                const fake = await projection.toFake(flat);
-                let index = 0;
-                const fakeRings = entry.rings.map((ring) => ring.map(() => fakeToTileLocal(fake[index++], z, x, y)));
-                const geometry = buildFeatureGeometry(entry.type, fakeRings);
-                if (!geometry) {
-                    continue;
+                pending.push({ layerName, entry, start: batch.length, count: flat.length });
+                for (const point of flat) {
+                    batch.push(point);
                 }
+            }
+        }
 
-                features.push({ id: entry.id, geometry, properties: entry.tags });
+        const fake = batch.length > 0 ? await projection.toFake(batch) : [];
+        const layerFeatures = new Map();
+        for (const { layerName, entry, start, count } of pending) {
+            const slice = fake.slice(start, start + count);
+            let index = 0;
+            const fakeRings = entry.rings.map((ring) => ring.map(() => fakeToTileLocal(slice[index++], z, x, y)));
+            const geometry = buildFeatureGeometry(entry.type, fakeRings);
+            if (!geometry) {
+                continue;
             }
 
-            if (features.length > 0) {
-                layers.push({ name: layerName, features });
+            if (!layerFeatures.has(layerName)) {
+                layerFeatures.set(layerName, []);
             }
+            layerFeatures.get(layerName).push({ id: entry.id, geometry, properties: entry.tags });
+        }
+
+        const layers = [];
+        for (const [layerName, features] of layerFeatures) {
+            layers.push({ name: layerName, features });
         }
 
         return encodeTileLayers(layers);
