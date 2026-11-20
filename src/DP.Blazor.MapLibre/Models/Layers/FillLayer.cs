@@ -318,6 +318,15 @@ public class FillLayerPaint
     public OneOf<double, JsonArray>? FillLayerOpacity { get; set; }
 
     /// <summary>
+    /// The blend mode used to composite this fill layer with the layers below it
+    /// (MapLibre 6.18+): <c>normal</c>, <c>multiply</c>, <c>color</c>, <c>luminosity</c>,
+    /// <c>plus-lighter</c>, <c>screen</c> or <c>overlay</c>. Not data-driven.
+    /// </summary>
+    [JsonPropertyName("fill-layer-blend")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FillLayerBlend { get; set; }
+
+    /// <summary>
     /// Mapbox-style extension; may be ignored by MapLibre GL JS. Controls emissive light intensity on source features.
     /// </summary>
     [JsonPropertyName("fill-emissive-strength")]

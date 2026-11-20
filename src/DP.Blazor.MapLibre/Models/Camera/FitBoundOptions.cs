@@ -26,4 +26,12 @@ public class FitBoundOptions : FlyToOptions
     [JsonPropertyName("offset")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public new PointLike? Offset { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, the padding is the map's total padding: the camera is fitted into the padded viewport
+    /// instead of the padding being added to the one the map already has (MapLibre 6.12+).
+    /// </summary>
+    [JsonPropertyName("absolutePadding")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AbsolutePadding { get; set; }
 }

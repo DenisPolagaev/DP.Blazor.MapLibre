@@ -24,6 +24,14 @@ public class GeolocateControlOptions
     [JsonPropertyName("showUserLocation")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ShowUserLocation { get; set; }
+
+    /// <summary>
+    /// How far to zoom to the accuracy of the reported position while <see cref="TrackUserLocation"/> is on
+    /// (MapLibre 6.12+). Default is <c>true</c>.
+    /// </summary>
+    [JsonPropertyName("zoomToUserAccuracy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ZoomToUserAccuracy { get; set; }
 }
 
 public class PositionOptions

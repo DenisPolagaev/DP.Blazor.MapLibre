@@ -78,4 +78,14 @@ public class VectorTileSource : ISource
     [JsonPropertyName("encoding")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Encoding { get; set; }
+
+    /// <summary>
+    /// Whether the tileset leaves tiles out (MapLibre 6.17+, experimental). When <c>true</c>, a tile the server
+    /// answers with 404 shows the matching part of the nearest ancestor that exists (up to 10 levels up, never
+    /// below the source <c>minzoom</c>), sliced as an overzoomed tile. When <c>false</c>, a missing tile is empty.
+    /// Default is false.
+    /// </summary>
+    [JsonPropertyName("sparse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Sparse { get; set; }
 }

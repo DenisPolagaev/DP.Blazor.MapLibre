@@ -30,4 +30,12 @@ public sealed class SetStyleOptions
     [JsonPropertyName("localIdeographFontFamily")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LocalIdeographFontFamily { get; set; }
+
+    /// <summary>
+    /// The initial global state for the new style, overriding the defaults the style defines
+    /// (MapLibre 6.14+).
+    /// </summary>
+    [JsonPropertyName("globalState")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, object?>? GlobalState { get; set; }
 }

@@ -91,6 +91,15 @@ public class LineLayerPaint
     public OneOf<double, JsonArray>? LineLayerOpacity { get; set; }
 
     /// <summary>
+    /// The blend mode used to composite this line layer with the layers below it
+    /// (MapLibre 6.18+): <c>normal</c>, <c>multiply</c>, <c>color</c>, <c>luminosity</c>,
+    /// <c>plus-lighter</c>, <c>screen</c> or <c>overlay</c>. Not data-driven.
+    /// </summary>
+    [JsonPropertyName("line-layer-blend")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LineLayerBlend { get; set; }
+
+    /// <summary>
     /// The color with which the line will be drawn. Defaults to #000000.
     /// </summary>
     [JsonPropertyName("line-color")]

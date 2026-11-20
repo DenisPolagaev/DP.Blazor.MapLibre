@@ -99,4 +99,42 @@ public static class Expr
         Array.Copy(stops, 0, result, 3, stops.Length);
         return result;
     }
+
+    /// <summary>
+    /// Reads a value of the style's global state (MapLibre <c>global-state</c> expression, 6.x):
+    /// <c>["global-state", name]</c>.
+    /// </summary>
+    public static object[] GlobalState(string name) => ["global-state", name];
+
+    /// <summary>
+    /// Interpolation on a feature property in the perceptual Oklab space (MapLibre 6.19+).
+    /// Stops are value1, color1, value2, color2, ... The output type is determined by the input (colour stops).
+    /// </summary>
+    public static object[] InterpolateOklab(string property, params object[] stops) =>
+        InterpolateWith(Get(property), "oklab", stops);
+
+    /// <summary>
+    /// Interpolation on a feature property in the perceptual Oklch space (MapLibre 6.19+).
+    /// Stops are value1, color1, value2, color2, ...
+    /// </summary>
+    public static object[] InterpolateOklch(string property, params object[] stops) =>
+        InterpolateWith(Get(property), "oklch", stops);
+
+    /// <summary>Oklab interpolation based on zoom (MapLibre 6.19+). Stops are zoom1, color1, zoom2, color2, ...</summary>
+    public static object[] InterpolateZoomOklab(params object[] stops) =>
+        InterpolateWith(Zoom, "oklab", stops);
+
+    /// <summary>Oklch interpolation based on zoom (MapLibre 6.19+). Stops are zoom1, color1, zoom2, color2, ...</summary>
+    public static object[] InterpolateZoomOklch(params object[] stops) =>
+        InterpolateWith(Zoom, "oklch", stops);
+
+    private static object[] InterpolateWith(object input, string space, object[] stops)
+    {
+        var result = new object[stops.Length + 3];
+        result[0] = "interpolate";
+        result[1] = new object[] { space };
+        result[2] = input;
+        Array.Copy(stops, 0, result, 3, stops.Length);
+        return result;
+    }
 }

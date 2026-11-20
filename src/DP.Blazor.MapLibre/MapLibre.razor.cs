@@ -1166,6 +1166,36 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Shows symbol collision boxes for debug purposes.
+    /// </summary>
+    public async ValueTask ShowCollisionBoxes(bool shouldShowCollisionBoxes) =>
+        await InvokeMapJsVoidAsync("showCollisionBoxes", JsContainerId, shouldShowCollisionBoxes);
+
+    /// <summary>
+    /// Shows the overdraw inspector for debug purposes.
+    /// </summary>
+    public async ValueTask ShowOverdrawInspector(bool shouldShowOverdrawInspector) =>
+        await InvokeMapJsVoidAsync("showOverdrawInspector", JsContainerId, shouldShowOverdrawInspector);
+
+    /// <summary>
+    /// Shows the map padding for debug purposes.
+    /// </summary>
+    public async ValueTask ShowPadding(bool shouldShowPadding) =>
+        await InvokeMapJsVoidAsync("showPadding", JsContainerId, shouldShowPadding);
+
+    /// <summary>
+    /// Shows source vertices for debug purposes.
+    /// </summary>
+    public async ValueTask ShowVertices(bool shouldShowVertices) =>
+        await InvokeMapJsVoidAsync("showVertices", JsContainerId, shouldShowVertices);
+
+    /// <summary>
+    /// Enables continuous repainting, the <c>map.repaint</c> flag used for performance analysis.
+    /// </summary>
+    public async ValueTask SetContinuousRepaint(bool enabled) =>
+        await InvokeMapJsVoidAsync("setContinuousRepaint", JsContainerId, enabled);
+
+    /// <summary>
     /// Adds a fullscreen control. Pass <see cref="FullscreenControlOptions"/> for <c>pseudo</c> / container.
     /// </summary>
     /// <returns>A handle to the control, or <c>null</c> while a bulk transaction is in progress (the control is created on <see cref="Commit"/>).</returns>
@@ -1366,6 +1396,42 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
             return;
         }
 
+        await InvokeMapJsVoidAsync("ensureLayer", JsContainerId, layer, beforeId);
+    }
+
+    /// <summary>
+    /// Adds a layer described by its MapLibre style specification as-is.
+    /// </summary>
+    /// <remarks>
+    /// MapLibre GL JS takes a plain object, so a caller that already owns the style JSON
+    /// (a style definition, a server template) does not have to model it in C# first. The
+    /// object is forwarded verbatim; no property is translated, dropped or defaulted.
+    /// </remarks>
+    /// <param name="layer">The layer specification (<c>id</c>, <c>type</c>, <c>source</c>, <c>paint</c>, <c>layout</c>, <c>filter</c>, …).</param>
+    /// <param name="beforeId">An optional layer ID indicating the position before which the new layer should be added.</param>
+    public async ValueTask AddLayer(JsonObject layer, string? beforeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addLayer", layer, beforeId);
+            return;
+        }
+        await InvokeMapJsVoidAsync("addLayer", JsContainerId, layer, beforeId);
+    }
+
+    /// <summary>
+    /// Adds a layer specification when missing; otherwise refreshes zoom, filter, layout, paint and order.
+    /// </summary>
+    /// <remarks>Same contract as <see cref="EnsureLayer(Layer, string?)"/>, for a caller that owns the style JSON.</remarks>
+    public async ValueTask EnsureLayer(JsonObject layer, string? beforeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("ensureLayer", layer, beforeId);
+            return;
+        }
         await InvokeMapJsVoidAsync("ensureLayer", JsContainerId, layer, beforeId);
     }
 
@@ -1948,11 +2014,29 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         await InvokeMapJsAsync<double>("getPitch", JsContainerId);
 
     /// <summary>
+    /// Changes the tile level-of-detail behaviour of a source (or of every source when
+    /// <paramref name="sourceId"/> is null): how many distinct zoom levels may be on screen and how many more tiles
+    /// may load at high pitch. Has no effect at pitch 0.
+    /// </summary>
+    public async ValueTask SetSourceTileLodParams(
+        double maxZoomLevelsOnScreen,
+        double tileCountMaxMinRatio,
+        string? sourceId = null) =>
+        await InvokeMapJsVoidAsync(
+            "setSourceTileLodParams", JsContainerId, maxZoomLevelsOnScreen, tileCountMaxMinRatio, sourceId);
+
+    /// <summary>
     /// Retrieves the map's pixel ratio.
     /// </summary>
     /// <returns>The pixel ratio of the map.</returns>
     public async ValueTask<double> GetPixelRatio() =>
         await InvokeMapJsAsync<double>("getPixelRatio", JsContainerId);
+
+    /// <summary>
+    /// Sets the pixel ratio used to scale the canvas resolution (MapLibre may clamp it to <c>maxCanvasSize</c>).
+    /// </summary>
+    public async ValueTask SetPixelRatio(double pixelRatio) =>
+        await InvokeMapJsVoidAsync("setPixelRatio", JsContainerId, pixelRatio);
 
     /// <summary>
     /// Retrieves the projection specification of the map.
@@ -2016,6 +2100,12 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// </summary>
     public async ValueTask<object?> GetGlobalStateProperty(string propertyName) =>
         await InvokeMapJsAsync<object?>("getGlobalStateProperty", JsContainerId, propertyName);
+
+    /// <summary>
+    /// Returns the whole global state of the style: property name to value (MapLibre 6.14+).
+    /// </summary>
+    public async ValueTask<Dictionary<string, object?>> GetGlobalState() =>
+        await InvokeMapJsAsync<Dictionary<string, object?>>("getGlobalState", JsContainerId);
 
     /// <summary>
     /// Retrieves the style's sprite as a list of objects.
@@ -2151,6 +2241,14 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Reports whether a transform request is installed — the C#-friendly view of MapLibre 6.19
+    /// <c>Map#getTransformRequest</c>, which returns the request function itself and therefore cannot cross
+    /// the JS interop boundary. Covers a .NET callback, a JS policy and a <see cref="MapOptions.TransformRequest"/>.
+    /// </summary>
+    public async ValueTask<bool> HasTransformRequest() =>
+        await InvokeMapJsAsync<bool>("hasTransformRequest", JsContainerId);
+
+    /// <summary>
     /// Supplies missing style images (MapLibre GL JS v6+). Call <see cref="AddImage"/> inside
     /// the resolver before the returned task completes. Pass <c>null</c> to clear.
     /// </summary>
@@ -2220,6 +2318,31 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     /// <returns>The current zoom level of the map.</returns>
     public async ValueTask<double> GetZoom() =>
         await InvokeMapJsAsync<double>("getZoom", JsContainerId);
+
+    /// <summary>
+    /// Returns the zoom snap step.
+    /// </summary>
+    public async ValueTask<double> GetZoomSnap() =>
+        await InvokeMapJsAsync<double>("getZoomSnap", JsContainerId);
+
+    /// <summary>
+    /// Sets the zoom snap step: zooming via keyboard, wheel, buttons, double click or double tap lands on multiples
+    /// of <paramref name="zoomSnap"/> (1.0 rounds to whole levels).
+    /// </summary>
+    public async ValueTask SetZoomSnap(double zoomSnap) =>
+        await InvokeMapJsVoidAsync("setZoomSnap", JsContainerId, zoomSnap);
+
+    /// <summary>
+    /// Returns the pitch (degrees) above which anisotropic filtering is applied to raster layers.
+    /// </summary>
+    public async ValueTask<double> GetAnisotropicFilterPitch() =>
+        await InvokeMapJsAsync<double>("getAnisotropicFilterPitch", JsContainerId);
+
+    /// <summary>
+    /// Sets the pitch (degrees) above which anisotropic filtering is applied to raster layers.
+    /// </summary>
+    public async ValueTask SetAnisotropicFilterPitch(double pitch) =>
+        await InvokeMapJsVoidAsync("setAnisotropicFilterPitch", JsContainerId, pitch);
 
     /// <summary>
     /// Returns the zoom level at which a clustered GeoJSON source expands the given cluster.

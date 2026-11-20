@@ -62,6 +62,15 @@ public class RasterLayerPaint
     [JsonConverter(typeof(OneOfJsonConverter<string>))]
     public OneOf<string, JsonArray>? RasterResampling { get; set; }
 
+    /// <summary>
+    /// The blend mode used to composite this raster layer with the layers below it
+    /// (MapLibre 6.18+): <c>normal</c>, <c>multiply</c>, <c>color</c>, <c>luminosity</c>,
+    /// <c>plus-lighter</c>, <c>screen</c> or <c>overlay</c>. Not data-driven.
+    /// </summary>
+    [JsonPropertyName("raster-layer-blend")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RasterLayerBlend { get; set; }
+
     [JsonPropertyName("resampling")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonConverter(typeof(OneOfJsonConverter<string>))]

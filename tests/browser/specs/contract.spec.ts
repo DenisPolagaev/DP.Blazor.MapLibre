@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('MapLibre 6.11 contract suite', () => {
+test.describe('MapLibre 6.19 contract suite', () => {
   test('map options accept v6 names and time API is top-level', async ({ page }) => {
     await page.goto('/');
     await page.waitForFunction(() => !!window.maplibregl);
@@ -17,7 +17,8 @@ test.describe('MapLibre 6.11 contract suite', () => {
         pitchSpeed: -0.5,
         anisotropicFilterPitch: 20,
         terrainSkirtLength: 'auto',
-        aroundCenter: true,
+        dragRotate: { around: 'pointer' },
+        globalState: { theme: 'dark' },
       });
       await map.once('load');
 
@@ -263,5 +264,105 @@ test.describe('MapLibre 6.11 contract suite', () => {
     expect(result.styleUrl).toBeNull();
     expect(result.anchoredZoom).toBe(4);
     expect(result.warp).toBe('flat');
+  });
+
+  test('MapLibre 6.12-6.19 APIs used by the wrapper are exposed', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!window.maplibregl);
+
+    const result = await page.evaluate(async () => {
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {
+            overlay: {
+              type: 'image',
+              url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+              coordinates: [
+                [-10, 10],
+                [10, 10],
+                [10, -10],
+                [-10, -10],
+              ],
+            },
+          },
+          layers: [{ id: 'overlay', type: 'raster', source: 'overlay' }],
+        },
+        center: [0, 0],
+        zoom: 1,
+        attributionControl: false,
+        globalState: { theme: 'dark' },
+      });
+      await map.once('load');
+
+      map.setPaintProperty('overlay', 'raster-layer-blend', 'multiply');
+      map.addSource('sparse-vector', {
+        type: 'vector',
+        tiles: ['data:application/vnd.mapbox-vector-tile;base64,'],
+        sparse: true,
+      });
+
+      const zoomSnapBefore = map.getZoomSnap();
+      map.setZoomSnap(1);
+      const zoomSnapAfter = map.getZoomSnap();
+
+      const anisotropicBefore = map.getAnisotropicFilterPitch();
+      map.setAnisotropicFilterPitch(30);
+      const anisotropicAfter = map.getAnisotropicFilterPitch();
+
+      const pixelRatioBefore = map.getPixelRatio();
+      map.setPixelRatio(1);
+      const pixelRatioAfter = map.getPixelRatio();
+
+      map.setSourceTileLodParams(4, 3);
+
+      const result = {
+        hasGetTransformRequest: typeof map.getTransformRequest === 'function',
+        transformRequestInitiallyNull: map.getTransformRequest() === null,
+        hasGetGlobalState: typeof map.getGlobalState === 'function',
+        hasSetTrustedTypesPolicy: typeof maplibregl.setTrustedTypesPolicy === 'function',
+        hasAddProjection: typeof maplibregl.addProjection === 'function',
+        hasRemoveProjection: typeof maplibregl.removeProjection === 'function',
+        hasSourceTileLodParams: typeof map.setSourceTileLodParams === 'function',
+        debugFlags: {
+          collisionBoxes: typeof map.showCollisionBoxes,
+          overdrawInspector: typeof map.showOverdrawInspector,
+          padding: typeof map.showPadding,
+          tileBoundaries: typeof map.showTileBoundaries,
+          vertices: typeof map.vertices,
+          repaint: typeof map.repaint,
+        },
+        globalState: map.getGlobalState()?.theme ?? null,
+        blend: map.getPaintProperty('overlay', 'raster-layer-blend'),
+        sparseSource: map.getSource('sparse-vector') != null,
+        zoomSnapBefore,
+        zoomSnapAfter,
+        anisotropicBefore,
+        anisotropicAfter,
+        pixelRatioBefore,
+        pixelRatioAfter,
+      };
+
+      map.remove();
+      return result;
+    });
+
+    expect(result.hasGetTransformRequest).toBe(true);
+    expect(result.transformRequestInitiallyNull).toBe(true);
+    expect(result.hasGetGlobalState).toBe(true);
+    expect(result.hasSetTrustedTypesPolicy).toBe(true);
+    expect(result.hasAddProjection).toBe(true);
+    expect(result.hasRemoveProjection).toBe(true);
+    expect(result.hasSourceTileLodParams).toBe(true);
+    for (const value of Object.values(result.debugFlags)) {
+      expect(value).toBe('boolean');
+    }
+    expect(result.globalState).toBe('dark');
+    expect(result.blend).toBe('multiply');
+    expect(result.sparseSource).toBe(true);
+    expect(result.zoomSnapAfter).toBe(1);
+    expect(result.anisotropicAfter).toBe(30);
+    expect(result.pixelRatioAfter).toBe(1);
   });
 });

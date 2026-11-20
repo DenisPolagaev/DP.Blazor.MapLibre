@@ -525,9 +525,25 @@ export class MapLibreStarryBackground {
     return worldSize / (2.0 * Math.PI) / safeCos;
   }
 
-  /** @param {object} map */
+  /**
+   * Reads the world size (in pixels) and the center latitude the radius math needs.
+   *
+   * Uses public map accessors only: MapLibre GL JS 6.19 removed the internal `Transform` classes and does not
+   * expose the camera state on `Map`, so the world size is derived from the zoom the same way the engine does
+   * (`512 * 2^zoom`, the camera's tile size is 512). The `transform` probes below stay for hosts that still run
+   * MapLibre 6.18 or older and for map-like objects that hide `getZoom`.
+   *
+   * @param {object} map
+   */
   resolveTransform(map) {
     try {
+      const zoom = typeof map.getZoom === "function" ? map.getZoom() : null;
+      const center = typeof map.getCenter === "function" ? map.getCenter() : null;
+      const lat = center?.lat;
+      if (Number.isFinite(zoom) && lat != null) {
+        return { worldSize: 512 * Math.pow(2, zoom), lat };
+      }
+
       let transform = null;
       if (typeof map._getTransformForUpdate === "function") {
         transform = map._getTransformForUpdate();
@@ -544,13 +560,13 @@ export class MapLibreStarryBackground {
         ?? (typeof transform.getWorldSize === "function"
           ? transform.getWorldSize()
           : null);
-      const center = transform.center ?? transform._center;
-      const lat = center?.lat ?? map.getCenter?.()?.lat;
-      if (worldSize == null || lat == null || !Number.isFinite(worldSize)) {
+      const centerFromTransform = transform.center ?? transform._center;
+      const fallbackLat = centerFromTransform?.lat ?? map.getCenter?.()?.lat;
+      if (worldSize == null || fallbackLat == null || !Number.isFinite(worldSize)) {
         return null;
       }
 
-      return { worldSize, lat };
+      return { worldSize, lat: fallbackLat };
     } catch {
       return null;
     }
