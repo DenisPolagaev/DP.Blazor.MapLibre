@@ -1400,6 +1400,42 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
+    /// Adds a layer described by its MapLibre style specification as-is.
+    /// </summary>
+    /// <remarks>
+    /// MapLibre GL JS takes a plain object, so a caller that already owns the style JSON
+    /// (a style definition, a server template) does not have to model it in C# first. The
+    /// object is forwarded verbatim; no property is translated, dropped or defaulted.
+    /// </remarks>
+    /// <param name="layer">The layer specification (<c>id</c>, <c>type</c>, <c>source</c>, <c>paint</c>, <c>layout</c>, <c>filter</c>, …).</param>
+    /// <param name="beforeId">An optional layer ID indicating the position before which the new layer should be added.</param>
+    public async ValueTask AddLayer(JsonObject layer, string? beforeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("addLayer", layer, beforeId);
+            return;
+        }
+        await InvokeMapJsVoidAsync("addLayer", JsContainerId, layer, beforeId);
+    }
+
+    /// <summary>
+    /// Adds a layer specification when missing; otherwise refreshes zoom, filter, layout, paint and order.
+    /// </summary>
+    /// <remarks>Same contract as <see cref="EnsureLayer(Layer, string?)"/>, for a caller that owns the style JSON.</remarks>
+    public async ValueTask EnsureLayer(JsonObject layer, string? beforeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (_bulkTransaction is not null)
+        {
+            _bulkTransaction.Add("ensureLayer", layer, beforeId);
+            return;
+        }
+        await InvokeMapJsVoidAsync("ensureLayer", JsContainerId, layer, beforeId);
+    }
+
+    /// <summary>
     /// Adds a source to the map with the specified identifier and source object.
     /// </summary>
     /// <param name="id">A unique identifier for the source.</param>
