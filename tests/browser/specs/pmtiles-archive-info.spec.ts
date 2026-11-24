@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 // The portal picks a vector source's `encoding` from the PMTiles header when the layer style does not declare it, so
 // the format is read from the archive instead of assumed. This checks the plugin API against a real archive:
 //   set PROJ_PMTILES_URL=http://localhost:9000/fire-tiles/gfmr/static.pmtiles
-//   set PROJ_ALLOW_CORS=1            (allow cross-origin fetches to local MinIO)
+//   set PROJ_ALLOW_CORS=1            (allow cross-origin fetches to the local object store)
 const archiveUrl = process.env.PROJ_PMTILES_URL;
 
 test.skip(!archiveUrl, 'set PROJ_PMTILES_URL to a PMTiles archive to run this test');

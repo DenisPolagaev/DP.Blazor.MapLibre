@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-// Reads tiles from a real PMTiles archive (e.g. local MinIO) and reprojects them.
+// Reads tiles from a real PMTiles archive (e.g. the local object store) and reprojects them.
 //   set PROJ_PMTILES_URL=http://localhost:9000/fire-tiles/gfmr/static.pmtiles
-//   set PROJ_ALLOW_CORS=1            (allow cross-origin fetches to local MinIO)
+//   set PROJ_ALLOW_CORS=1            (allow cross-origin fetches to the local object store)
 //   optional PROJ_PMTILES_CRS=EPSG:3413
 const archiveUrl = process.env.PROJ_PMTILES_URL;
 const crs = process.env.PROJ_PMTILES_CRS ?? 'EPSG:3413';

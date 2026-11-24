@@ -23,7 +23,7 @@ export default defineConfig({
         ...(process.env.CI
           ? ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist']
           : []),
-        // Opt-in: allow cross-origin fetches to a local MinIO/S3 when testing real PMTiles.
+        // Opt-in: allow cross-origin fetches to a local object store when testing real PMTiles.
         ...(process.env.PROJ_ALLOW_CORS ? ['--disable-web-security'] : []),
       ],
     },
