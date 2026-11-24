@@ -101,16 +101,27 @@ function importMapResolves() {
     }
 }
 
-// Adds the vendored module entries unless the host already declares them. Browsers read import maps only before
-// the first module loads, so an entry added here can be ignored; that case is reported with console.warn.
+// Adds the vendored module entries unless the host already declares them *and* they resolve. Browsers read import
+// maps only before the first module loads, so an entry added here can be ignored; that case is reported with
+// console.warn. A host map whose values are not URL-like (an import map value has to start with "/", "./", "../" or
+// a scheme — a bare `_content/...` is rejected by the browser) is present in the DOM but resolves nothing, so its
+// presence alone must not stop the fallback: that combination left the pipeline unable to import anything at all.
 function installImportMap() {
     if (importMapInstalled) {
         return;
     }
     importMapInstalled = true;
 
-    if (hostProvidesImportMap()) {
+    const hostDeclares = hostProvidesImportMap();
+    const hostResolves = importMapResolves();
+    if (hostDeclares && hostResolves !== false) {
         return;
+    }
+
+    if (hostDeclares && hostResolves === false) {
+        console.warn(
+            'ProjPlugin: the page declares the vendored module entries, but they do not resolve (an import map value '
+            + 'must be an absolute URL or start with "/", "./" or "../"). Adding them again; see GetImportMapAsync().');
     }
 
     const map = buildImportMap();
@@ -199,6 +210,10 @@ function createMapState() {
         transformerIds: new Set(),
         generation: 0, // incremented by every apply
         queue: Promise.resolve(), // serializes style changes for this map
+        // The last style document in real coordinates. A reprojected style cannot be reprojected again, and reloading
+        // the style from the theme is asynchronous (a URL style finishes loading long after setStyle returns), so a
+        // CRS-to-CRS switch re-applies this document instead of whatever document the map happens to hold.
+        sourceStyle: null,
     };
 }
 
@@ -378,6 +393,19 @@ function warnSkippedSource(sourceId, reason) {
     console.warn(`ProjPlugin: skipped source "${sourceId}" and its layers: ${reason}.`);
 }
 
+// A style this plugin already reprojected points its sources at `reproj-…://` handlers, so it cannot be reprojected
+// again — the pipeline would hand its own output URL to the input decoder, and dropping every source silently left
+// the map blank (this is what a CRS-to-CRS switch did). The last real-coordinate document is kept in the map state,
+// so another projection re-applies that one instead of the plugin's own output.
+const REPROJECTED_TILE = /^reproj-/;
+
+function reprojectedSourceIds(style) {
+    return Object.entries(style?.sources ?? {})
+        .filter(([, source]) => Array.isArray(source?.tiles)
+            && source.tiles.some((tile) => typeof tile === 'string' && REPROJECTED_TILE.test(tile)))
+        .map(([id]) => id);
+}
+
 // Normalises a `pmtiles://` source into `__pmtilesArchive`, the archive URL the tile reprojector reads with range
 // requests. Both spellings are accepted: `url: "pmtiles://…"` and a tile template that starts with the scheme.
 // Returns true when the source became a pmtiles archive. Used by the style path and by `reprojectSource`, so a
@@ -521,6 +549,12 @@ async function reprojectStyleCore(options, state, generation) {
         throw new Error('reprojectStyle requires a style.');
     }
 
+    // Remember the real-coordinate document before it is rewritten: this is what another projection re-applies, and
+    // it is also the only document that stays valid when the map currently holds the reprojected one.
+    if (reprojectedSourceIds(options.style).length === 0) {
+        state.sourceStyle = JSON.parse(JSON.stringify(options.style));
+    }
+
     const pipeline = await loadPipeline();
     const projection = await resolveProjection(args);
     const prepared = await prepareStyle(options.style);
@@ -627,13 +661,27 @@ export function applyReprojection(options, map) {
     });
 }
 
-// Reprojects the map's current style. The current style must not already be reprojected by this plugin.
+// Reprojects the map's current style. A style this plugin already reprojected is replaced by the last real-coordinate
+// document it was given, so a CRS-to-CRS switch does not depend on the host's style reload having finished.
 export function reprojectCurrentStyle(options, map) {
     const target = resolveMap(map);
     const state = stateFor(target);
     return enqueue(state, async () => {
+        const current = target.getStyle();
+        let style = current;
+        if (reprojectedSourceIds(current).length > 0) {
+            if (!state.sourceStyle) {
+                throw new Error(
+                    'ProjPlugin: the current style is already reprojected and no source document is known. '
+                    + 'Load the style again before applying another projection — a reprojected style is not a '
+                    + 'source of real coordinates.');
+            }
+
+            style = state.sourceStyle;
+        }
+
         const generation = ++state.generation;
-        const result = await reprojectStyleCore({ ...options, style: target.getStyle() }, state, generation);
+        const result = await reprojectStyleCore({ ...options, style }, state, generation);
         applyResult(target, state, generation, result, options);
         return toResultDto(result);
     });

@@ -2,7 +2,7 @@
 
 **Any-projection** plugin for [DP.Blazor.MapLibre](https://github.com/DenisPolagaev/DP.Blazor.MapLibre): render a map in any coordinate reference system (CRS) with [proj-wasm](https://www.npmjs.com/package/proj-wasm) (PROJ 9 compiled to WebAssembly).
 
-The plugin runs a self-contained reprojection pipeline on the browser main thread for GeoJSON and vector tiles. It has no Web Workers and does not use `maplibre-proj` or `backproj`.
+The plugin runs a self-contained reprojection pipeline for GeoJSON and vector tiles. The PROJ maths runs in `proj-wasm`'s own module workers; the per-tile work around it (decode, densify, clip, simplify, encode) runs on the map's main thread. It does not use `maplibre-proj` or `backproj`.
 
 The vendored runtime lives under `_content/ProjPlugin/vendor` and is about 15.0 MB on disk (14.3 MiB):
 
@@ -24,9 +24,9 @@ The core `DP.Blazor.MapLibre` package is referenced automatically.
 ## Requirements
 
 - The map **must** be created with `RenderWorldCopies = false`. The fake coordinate space does not tile.
-- Vector sources must be MapLibre Tiles (`encoding: "mlt"`). MVT sources are not supported and are dropped with a warning.
 - Register the plugin with `MapLibre.RegisterPlugin` before calling its members.
 - Declare the import map entries from `GetImportMapAsync()` in a static `<script type="importmap">` before the Blazor framework script (see [Import map](#import-map)). This is required for Firefox and Safari and recommended for every browser.
+- A style this plugin already reprojected is **not** a valid input for another apply: its sources point at the plugin's own `reproj-…://` protocol. Load the style again first; `ApplyCurrentStyleProjectionAsync` throws with the offending source ids instead of silently dropping them.
 
 ## Quick start
 
@@ -92,18 +92,22 @@ Copy the complete `imports` object returned by `GetImportMapAsync()`; the sample
 
 ## Behaviour to know about
 
+- **The input format is declared per source.** Our archives are MapLibre Tiles (`encoding: "mlt"`); a third-party style keeps its MVT tiles (`encoding: "mvt"`, the OpenFreeMap basemap the Map API serves). The handler reads either and always answers with MLT, so the rewritten source is forced to `encoding: "mlt"`.
 - **Only the first tile URL template of a vector source is used.** A warning is logged for a source with several templates.
-- **Input tiles per output tile are capped** by `MaxInputTiles` (default 64). When a tile needs more, the output tile is incomplete and a warning names the source.
-- **Sources that cannot be reprojected are removed with their layers**, and a warning names each one. These are raster sources, vector sources that are not MapLibre Tiles (`encoding` other than `"mlt"`), vector sources without http(s) tile URLs, and sources that the plugin already reprojected.
+- **Input tiles per output tile are capped** by `MaxInputTiles` (default 16). The same budget decides the input zoom, so raising it sharpens the edges of a projection at the cost of more requests; when a tile still needs more, the output tile is incomplete and a warning names the source. The input tiles are fetched concurrently.
+- **Sources that cannot be reprojected are removed with their layers**, and a warning names each one. These are raster sources, vector sources without http(s) tile URLs, and sources that the plugin already reprojected.
 - **HTTP 204 and 404 for an input tile** mean "no data here" and are treated as empty. Other HTTP errors fail the output tile, so MapLibre emits an error event. Failed loads are not cached.
-- **Re-running** `ApplyCurrentStyleProjectionAsync` on a style that the plugin already reprojected is not supported.
 - **`TileBoundaries`** is reserved. The value is sent to the pipeline, but debug layers are not implemented yet.
 - **Projections** are computed per CRS and area of use and cached process-wide. `ReleaseProjectionResourcesAsync` clears that cache.
-- Geometry is densified in real space and clipped per output tile. Cross-tile feature stitching and polygon repair are not implemented.
+- **Axis order is normalised.** `proj_create_crs_to_crs` honours the CRS's declared axes, and EPSG:3035/EPSG:3034 for example are (northing, easting). The pipeline reads the axes once per CRS and works in (easting, northing), so such a CRS is not drawn transposed. Oblique polar axes are left as they are.
+- **One operation per CRS, both directions.** The forward transform is `PJ_FWD` and the inverse is the same pipeline in `PJ_INV`; a separately built reverse operation may pick a different transformation (EPSG:5070 sent it into a datum grid that this runtime cannot load).
+- **PROJ network lookups are off.** The runtime ships `proj.db` but no datum grids, and a lookup that waits for a grid download blocks the browser; PROJ falls back to a ballpark/Helmert transformation instead.
+- **The sampling area comes from the CRS.** When the caller gives no area of use, the plugin reads `proj_get_area_of_use` and samples that — feeding a regional CRS the whole world is what made some datum transformations misbehave.
+- Geometry is densified in real space, clipped per output tile and simplified (Douglas–Peucker, sub-pixel) before encoding.
 
 ## Options
 
-- `MaxInputTiles` (`ProjReprojectOptions`, `ProjMapProjectionOptions`, `ProjSourceReprojectOptions`): integer, at least 1, default 64.
+- `MaxInputTiles` (`ProjReprojectOptions`, `ProjMapProjectionOptions`, `ProjSourceReprojectOptions`): integer, at least 1, default 16.
 - `PolarHemisphere` (`ProjReprojectOptions`, `ProjMapProjectionOptions`): `ProjPolarHemisphere.North` or `ProjPolarHemisphere.South`. Used only when no `AreaOfUse` is given; restricts the sampling to that hemisphere.
 - `TransformerId`: must match the CRS of the call; a mismatch throws.
 

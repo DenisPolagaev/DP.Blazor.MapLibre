@@ -43,7 +43,7 @@ public sealed class ProjSourceReprojectOptions
     /// and a warning names the source. Must be at least 1. Default: 64.
     /// </summary>
     [JsonPropertyName("maxInputTiles")]
-    public int MaxInputTiles { get; set; } = 64;
+    public int MaxInputTiles { get; set; } = 16;
 }
 
 /// <summary>Result of <see cref="ProjPlugin.ReprojectSourceAsync"/>.</summary>
