@@ -6,11 +6,14 @@ using Microsoft.JSInterop;
 namespace DP.Blazor.MapLibre.ProjPlugin;
 
 /// <summary>
-/// MapLibre plugin that renders a map in an arbitrary coordinate reference system (CRS). Reprojection runs on the
-/// browser main thread with the vendored <c>proj-wasm</c> (PROJ 9) runtime. The
-/// plugin does not use <c>maplibre-proj</c> or <c>backproj</c>.
+/// MapLibre plugin that renders a map in an arbitrary coordinate reference system (CRS). Reprojection is built on the
+/// vendored <c>proj-wasm</c> (PROJ 9) runtime; the plugin does not use <c>maplibre-proj</c> or <c>backproj</c>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Threading.</b> The PROJ maths runs in proj-wasm's own module workers; the per-tile work around it (decode,
+/// densify, clip, simplify, encode) runs on the map's main thread.
+/// </para>
 /// <para>
 /// <b>Requirements.</b> Create the map with <see cref="MapOptions.RenderWorldCopies"/> set to <c>false</c>: the
 /// reprojected style uses a fake Mercator coordinate space that does not tile. Register the plugin with
@@ -26,8 +29,10 @@ namespace DP.Blazor.MapLibre.ProjPlugin;
 /// <para>
 /// <b>Limitations.</b> Only the first tile URL template of a vector source is used; a warning is logged when a source
 /// has more. Raster sources and layers are dropped. At most <see cref="ProjReprojectOptions.MaxInputTiles"/> input
-/// tiles are read per output tile; beyond that the output tile is incomplete and a warning is logged. Re-running
-/// <see cref="ApplyCurrentStyleProjectionAsync"/> on a style that this plugin already reprojected is not supported.
+/// tiles are read per output tile; beyond that the output tile is incomplete and a warning is logged. A style this
+/// plugin already reprojected is not a valid input for another apply — its sources point at the plugin's own
+/// protocol — so the host has to load the style again first; <c>ApplyCurrentStyleProjectionAsync</c> throws instead
+/// of dropping every source.
 /// </para>
 /// <para>
 /// <b>Import map.</b> The vendored modules are resolved through an import map. Browsers read import maps only before
@@ -248,7 +253,7 @@ public sealed class ProjPlugin : MapLibreJsPlugin
     #region Diagnostics
 
     /// <summary>
-    /// Clears the process-wide projection cache and releases the transformers created for this map. There are no worker threads: the pipeline runs on the main thread. Transformer ids
+    /// Clears the process-wide projection cache and releases the transformers created for this map. Transformer ids
     /// returned earlier for this map become invalid; the next reprojection creates new ones. Protocol handlers still
     /// used by the map stay registered.
     /// </summary>

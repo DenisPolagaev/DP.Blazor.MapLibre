@@ -196,6 +196,58 @@ test.describe('ProjPlugin', () => {
     expect(result.pmTiles[0]).toMatch(/^reproj-/);
   });
 
+  // A reprojected style points its sources at the plugin's own protocol, so it cannot be reprojected directly. The
+  // plugin keeps the last real-coordinate document in the map state and re-applies *that* one — a CRS-to-CRS switch
+  // must not depend on the host reloading the style first (a URL style finishes loading long after setStyle returns),
+  // and it used to drop every source and leave a blank map.
+  test('reprojectCurrentStyle re-applies from the last real-coordinate style', async ({ page }) => {
+    await openHarness(page);
+
+    const result = await page.evaluate(async () => {
+      const plugin = (window as any).__proj;
+      const map = (window as any).__map;
+
+      map.setStyle({
+        version: 8,
+        sources: {
+          vec: { type: 'vector', encoding: 'mlt', tiles: ['http://127.0.0.1:4173/tiles/weather/{z}/{x}/{y}.mlt'] },
+        },
+        layers: [{ id: 'vec-layer', type: 'line', source: 'vec', 'source-layer': 'layer0' }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const first = await plugin.reprojectCurrentStyle({ crs: 'ESRI:54030' });
+      const second = await plugin.reprojectCurrentStyle({ crs: 'EPSG:5070' });
+      const sourcesAfter = Object.keys(map.getStyle().sources);
+      const tilesAfter = map.getStyle().sources.vec.tiles;
+
+      // Without a known source document (a foreign reprojected style) the call still refuses instead of dropping
+      // everything: `detach` forgets the map state while the reprojected style stays on the map.
+      plugin.detach(map);
+      let refusal: string | null = null;
+      try {
+        await plugin.reprojectCurrentStyle({ crs: 'ESRI:54030' });
+      } catch (error: any) {
+        refusal = String((error && error.message) || error);
+      }
+
+      return {
+        firstTiles: first.style.sources.vec.tiles,
+        secondTiles: second.style.sources.vec.tiles,
+        sourcesAfter,
+        tilesAfter,
+        refusal,
+      };
+    });
+
+    expect(result.firstTiles[0]).toMatch(/^reproj-/);
+    expect(result.secondTiles[0]).toMatch(/^reproj-/);
+    // The second apply rebuilt the sources from the real style: the map still has its vector source, reprojected.
+    expect(result.sourcesAfter).toEqual(['vec']);
+    expect(result.tilesAfter[0]).toMatch(/^reproj-/);
+    expect(result.refusal).toContain('already reprojected');
+  });
+
   test('reprojectSource rewrites vector tiles and geojson', async ({ page }) => {
     await openHarness(page);
 

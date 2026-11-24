@@ -57,10 +57,12 @@ public sealed class ProjReprojectOptions
 
     /// <summary>
     /// Upper bound on the input tiles read for one output tile of a vector source. When a tile needs more, the output
-    /// tile is incomplete and a warning names the source. Must be at least 1. Default: 64.
+    /// tile is incomplete and a warning names the source. Must be at least 1. It is also the budget the input zoom is
+    /// chosen with, so raising it sharpens the projection edge at the cost of more requests per output tile.
+    /// Default: 16.
     /// </summary>
     [JsonPropertyName("maxInputTiles")]
-    public int MaxInputTiles { get; set; } = 64;
+    public int MaxInputTiles { get; set; } = 16;
 
     /// <summary>
     /// Options passed to <c>MapLibre.SetStyle</c> when applying via
