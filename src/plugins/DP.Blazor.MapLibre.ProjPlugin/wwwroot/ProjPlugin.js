@@ -22,7 +22,7 @@
 import { getMapState, peekMapState, deleteMapState } from '../DP.Blazor.MapLibre/PluginRuntime.js';
 
 const STATE_KEY = 'ProjPlugin';
-const DEFAULT_MAX_INPUT_TILES = 64;
+const DEFAULT_MAX_INPUT_TILES = 16;
 const POLAR_HEMISPHERES = ['north', 'south'];
 const vendorRoot = '_content/ProjPlugin/vendor/';
 

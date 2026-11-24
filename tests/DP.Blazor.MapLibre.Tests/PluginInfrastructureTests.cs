@@ -451,7 +451,7 @@ public class PluginOptionsWireTests
         var json = Serialize(new ProjMapProjectionOptions { Crs = "EPSG:4326" });
 
         using var document = JsonDocument.Parse(json);
-        document.RootElement.GetProperty("maxInputTiles").GetInt32().Should().Be(64);
+        document.RootElement.GetProperty("maxInputTiles").GetInt32().Should().Be(16);
     }
 
     [Fact]
