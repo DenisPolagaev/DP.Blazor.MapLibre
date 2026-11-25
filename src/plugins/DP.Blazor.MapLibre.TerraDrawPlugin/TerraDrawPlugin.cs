@@ -121,13 +121,21 @@ public sealed partial class TerraDrawPlugin : MapLibreJsPlugin
         Type argumentType,
         string? controlId,
         string? eventName = null,
-        int? throttleTime = null)
+        int? throttleTime = null,
+        Func<object?, bool, ValueTask>? typedInvoker = null)
     {
         EnsureInitialized();
 
         // The owner is resolved now, so a later setActiveControl does not change where the listener belongs.
         var ownerId = controlId ?? await CallAsync<string?>("getActiveControlId");
-        var callback = new CallbackHandler(Module, string.Empty, method, handler, argumentType, "offListener");
+        var callback = new CallbackHandler(
+            Module,
+            string.Empty,
+            method,
+            handler,
+            argumentType,
+            "offListener",
+            typedInvoker);
         var reference = DotNetObjectReference.Create(callback);
 
         try

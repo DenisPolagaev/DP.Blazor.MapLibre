@@ -29,6 +29,7 @@ export type CompactMapEventDto = {
     } | null;
     layerId: unknown;
     features: CompactMapFeatureDto[] | undefined;
+    featuresUnchanged?: boolean;
     dataType: unknown;
     isSourceLoaded: unknown;
     sourceId: unknown;

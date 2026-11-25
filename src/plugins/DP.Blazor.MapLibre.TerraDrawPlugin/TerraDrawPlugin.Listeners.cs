@@ -17,7 +17,8 @@ public sealed partial class TerraDrawPlugin
             handler,
             typeof(T),
             controlId,
-            eventName: eventType.ToEventName());
+            eventName: eventType.ToEventName(),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
 
     /// <summary>
     /// Subscribes to a Terra Draw instance event. For <c>change</c> the payload is
@@ -35,42 +36,56 @@ public sealed partial class TerraDrawPlugin
             typeof(T),
             controlId,
             eventName: eventType.ToEventName(),
-            throttleTime: throttleTime);
+            throttleTime: throttleTime,
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
 
     /// <summary>Subscribes to the finish event. The payload is <see cref="TerraDrawFinishEventArgs"/>.</summary>
     public async Task<Listener> AddTerraDrawFinishListener<T>(
         Action<T> handler,
         string? controlId = null) =>
-        await RegisterListenerAsync("onTerraDrawFinish", handler, typeof(T), controlId);
+        await RegisterListenerAsync(
+            "onTerraDrawFinish",
+            handler,
+            typeof(T),
+            controlId,
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
 
     /// <summary>
     /// Subscribes to deleted features. The library sends <see cref="TerraDrawChangeEventArgs"/>; it is converted
     /// to <typeparamref name="T"/>: the whole args for <see cref="TerraDrawChangeEventArgs"/>, the features as a JSON
     /// array for <see cref="string"/>, and otherwise the features deserialized to <typeparamref name="T"/>.
     /// </summary>
-    public async Task<Listener> AddTerraDrawDeleteListener<T>(
+    public Task<Listener> AddTerraDrawDeleteListener<T>(
         Action<T> handler,
-        string? controlId = null) =>
-        await RegisterListenerAsync(
+        string? controlId = null)
+    {
+        var adaptedHandler = AdaptChangeHandler(handler);
+        return RegisterListenerAsync(
             "onTerraDrawDelete",
-            AdaptChangeHandler(handler),
+            adaptedHandler,
             typeof(TerraDrawChangeEventArgs),
-            controlId);
+            controlId,
+            typedInvoker: CallbackHandler.CreateTypedInvoker<TerraDrawChangeEventArgs>(adaptedHandler));
+    }
 
     /// <summary>
     /// Subscribes to throttled feature changes. The library sends <see cref="TerraDrawChangeEventArgs"/>; the
     /// payload is converted to <typeparamref name="T"/> as described in <see cref="AddTerraDrawDeleteListener{T}"/>.
     /// </summary>
-    public async Task<Listener> AddTerraDrawChangeListener<T>(
+    public Task<Listener> AddTerraDrawChangeListener<T>(
         Action<T> handler,
         int throttleTime,
-        string? controlId = null) =>
-        await RegisterListenerAsync(
+        string? controlId = null)
+    {
+        var adaptedHandler = AdaptChangeHandler(handler);
+        return RegisterListenerAsync(
             "onTerraDrawChange",
-            AdaptChangeHandler(handler),
+            adaptedHandler,
             typeof(TerraDrawChangeEventArgs),
             controlId,
-            throttleTime: throttleTime);
+            throttleTime: throttleTime,
+            typedInvoker: CallbackHandler.CreateTypedInvoker<TerraDrawChangeEventArgs>(adaptedHandler));
+    }
 
     private static Action<TerraDrawChangeEventArgs> AdaptChangeHandler<T>(Action<T> handler)
     {

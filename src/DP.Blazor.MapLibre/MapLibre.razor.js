@@ -653,6 +653,154 @@ function attachMapListener(map, eventType, handler, layerIds) {
     }
 }
 
+function featureHoverIdentity(feature, point) {
+    const layerId = feature?.layer?.id ?? feature?.layerId ?? '';
+    const source = feature?.source ?? '';
+    const sourceLayer = feature?.sourceLayer ?? '';
+    const properties = feature?.properties ?? {};
+    const orderedProperties = Object.keys(properties)
+        .sort()
+        .map(key => [key, properties[key]]);
+    const stableId = feature?.id
+        ?? properties.id
+        ?? properties.fire_id
+        ?? properties.flare_id
+        ?? properties.station_id
+        ?? properties.infrastructure_id
+        ?? properties.series_id;
+
+    if (stableId !== undefined && stableId !== null) {
+        return JSON.stringify([
+            source,
+            sourceLayer,
+            layerId,
+            String(stableId),
+            orderedProperties,
+        ]);
+    }
+
+    // Some GeoJSON features have no identifier. Include their value bag and a small
+    // screen-space cell so adjacent features with identical properties remain distinct.
+    return JSON.stringify([
+        source,
+        sourceLayer,
+        layerId,
+        orderedProperties,
+        Math.floor(point.x / 4),
+        Math.floor(point.y / 4),
+    ]);
+}
+
+function createFeatureHoverHandler(map, dotnetReference, initialLayerIds, hitHalfSizePx, throttleMs) {
+    let layerIds = [...new Set(initialLayerIds ?? [])];
+    let lastSignature = null;
+    let hasHit = false;
+    let lastInvoke = 0;
+    let throttleTimer = null;
+    let pendingEvent = null;
+    let cancelled = false;
+
+    const dispatchPending = () => {
+        throttleTimer = null;
+        const event = pendingEvent;
+        pendingEvent = null;
+        if (cancelled || event?.point == null) {
+            return;
+        }
+
+        lastInvoke = Date.now();
+        const queryLayers = layerIds.filter(layerId => map.getLayer(layerId));
+        let features = [];
+        if (queryLayers.length > 0) {
+            const { x, y } = event.point;
+            try {
+                features = map.queryRenderedFeatures(
+                    [
+                        [x - hitHalfSizePx, y - hitHalfSizePx],
+                        [x + hitHalfSizePx, y + hitHalfSizePx],
+                    ],
+                    { layers: queryLayers, validate: false }) ?? [];
+            } catch (error) {
+                console.debug('[MapLibre] Hover feature query failed.', error);
+                return;
+            }
+        }
+
+        const signature = JSON.stringify(
+            features.map(feature => featureHoverIdentity(feature, event.point)).sort());
+        if (signature === lastSignature) {
+            if (hasHit) {
+                // The popup follows the pointer, but the full feature payload and
+                // .NET hit-test are unnecessary while the feature set is unchanged.
+                dotnetReference.invokeMethodAsync('Invoke', JSON.stringify({
+                    type: event.type,
+                    point: event.point,
+                    lngLat: event.lngLat,
+                    features: [],
+                    featuresUnchanged: true,
+                })).catch(console.error);
+            }
+            return;
+        }
+
+        const hadHit = hasHit;
+        lastSignature = signature;
+        hasHit = features.length > 0;
+        // Empty space is the initial state. Only notify .NET when leaving a feature,
+        // not for every pointer move over the basemap.
+        if (!hadHit && !hasHit) {
+            return;
+        }
+
+        event.features = features.map(feature => toCompactFeature(feature));
+        event.layerId = event.features[0]?.layerId ?? null;
+        dotnetReference.invokeMethodAsync('Invoke', JSON.stringify(event)).catch(console.error);
+    };
+
+    const handler = function (event) {
+        if (cancelled) {
+            return;
+        }
+
+        pendingEvent = createCompactMapEventDto(event);
+        const now = Date.now();
+        if (!throttleMs || throttleMs <= 0 || now - lastInvoke >= throttleMs) {
+            if (throttleTimer !== null) {
+                clearTimeout(throttleTimer);
+                throttleTimer = null;
+            }
+            dispatchPending();
+            return;
+        }
+
+        if (throttleTimer === null) {
+            throttleTimer = setTimeout(dispatchPending, throttleMs - (now - lastInvoke));
+        }
+    };
+
+    handler.cancel = function cancel() {
+        cancelled = true;
+        pendingEvent = null;
+        if (throttleTimer !== null) {
+            clearTimeout(throttleTimer);
+            throttleTimer = null;
+        }
+    };
+
+    handler.updateLayerIds = function updateLayerIds(nextLayerIds) {
+        layerIds = [...new Set(nextLayerIds ?? [])];
+        lastSignature = null;
+        hasHit = false;
+        pendingEvent = null;
+        if (throttleTimer !== null) {
+            clearTimeout(throttleTimer);
+            throttleTimer = null;
+        }
+    };
+
+    return handler;
+}
+
 function detachMapListener(map, entry) {
     if (entry.layerIds === undefined || entry.layerIds === null) {
         map.off(entry.eventType, entry.handler);
@@ -675,6 +823,53 @@ export function on(container, eventType, dotnetReference, layerIds, throttleMs) 
     const handler = createMapEventHandler(dotnetReference, throttleMs);
     attachMapListener(map, eventType, handler, layerIds);
     return registerListener(container, eventType, handler, layerIds);
+}
+
+/**
+ * Registers a map-level mousemove listener that queries the supplied rendered layers
+ * in JavaScript. Full feature payloads are sent only when the hit set changes, while
+ * unchanged hits send a compact point update so the hover popup follows the pointer.
+ * Layer ids can be refreshed without replacing the callback reference.
+ */
+export function onFeatureHover(container, dotnetReference, layerIds, hitHalfSizePx, throttleMs) {
+    const map = requireMap(container, 'onFeatureHover');
+    const handler = createFeatureHoverHandler(
+        map,
+        dotnetReference,
+        layerIds,
+        hitHalfSizePx,
+        throttleMs);
+    map.on('mousemove', handler);
+    return registerListener(container, 'mousemove', handler, null);
+}
+
+export function updateListenerLayerIds(container, listenerId, layerIds) {
+    const entry = listenerRegistry[listenerId];
+    if (!entry || entry.container !== container) {
+        return;
+    }
+
+    if (typeof entry.handler?.updateLayerIds === 'function') {
+        entry.handler.updateLayerIds(layerIds);
+        return;
+    }
+
+    const map = mapInstances[container];
+    if (!map) {
+        return;
+    }
+
+    detachMapListener(map, entry);
+    entry.layerIds = Array.isArray(layerIds) && layerIds.length > 0 ? [...layerIds] : null;
+    if (entry.once) {
+        if (entry.layerIds === null) {
+            map.once(entry.eventType, entry.handler);
+        } else {
+            map.once(entry.eventType, entry.layerIds, entry.handler);
+        }
+    } else {
+        attachMapListener(map, entry.eventType, entry.handler, entry.layerIds);
+    }
 }
 
 /**

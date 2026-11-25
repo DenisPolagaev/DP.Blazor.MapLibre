@@ -711,7 +711,13 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     private async Task<Listener> AddListenerInternal<T>(string eventName, Delegate handler, object? layer = null, int? throttleMs = null)
     {
-        var callback = new CallbackHandler(_jsModule, JsContainerId, eventName, handler, typeof(T));
+        var callback = new CallbackHandler(
+            _jsModule,
+            JsContainerId,
+            eventName,
+            handler,
+            typeof(T),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("on", JsContainerId, eventName, reference, layer, throttleMs);
         callback.Attach(reference, listenerId, id => _listeners.TryRemove(id, out _));
@@ -720,9 +726,51 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
         return new Listener(callback);
     }
 
+    /// <summary>
+    /// Registers a throttled hover listener that hit-tests in JavaScript and sends full
+    /// feature payloads to .NET only when the rendered feature set changes.
+    /// </summary>
+    public async Task<Listener> AddFeatureHoverListener(
+        Func<MapMouseEvent, Task> handler,
+        IReadOnlyList<string> layerIds,
+        double hitHalfSizePx,
+        int throttleMs)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        ArgumentNullException.ThrowIfNull(layerIds);
+        ArgumentOutOfRangeException.ThrowIfNegative(hitHalfSizePx);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(throttleMs);
+
+        var callback = new CallbackHandler(
+            _jsModule,
+            JsContainerId,
+            MapEventNames.MouseMove,
+            handler,
+            typeof(MapMouseEvent),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<MapMouseEvent>(handler));
+        var reference = DotNetObjectReference.Create(callback);
+        var listenerId = await InvokeMapJsAsync<string>(
+            "onFeatureHover",
+            JsContainerId,
+            reference,
+            layerIds,
+            hitHalfSizePx,
+            throttleMs);
+        callback.Attach(reference, listenerId, id => _listeners.TryRemove(id, out _));
+        _listeners[listenerId] = callback;
+
+        return new Listener(callback);
+    }
+
     private async Task<Listener> AddOnceListenerInternal<T>(string eventName, Delegate handler, object? layer = null, int? throttleMs = null)
     {
-        var callback = new CallbackHandler(_jsModule, JsContainerId, eventName, handler, typeof(T));
+        var callback = new CallbackHandler(
+            _jsModule,
+            JsContainerId,
+            eventName,
+            handler,
+            typeof(T),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("once", JsContainerId, eventName, reference, layer, throttleMs);
         callback.Attach(reference, listenerId, id => _listeners.TryRemove(id, out _));
@@ -3620,7 +3668,14 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     private async Task<Listener> AddMarkerListenerInternal(Guid markerId, string eventName, Delegate handler)
     {
-        var callback = new CallbackHandler(_jsModule, string.Empty, eventName, handler, typeof(MapMarkerEvent), "markerOff");
+        var callback = new CallbackHandler(
+            _jsModule,
+            string.Empty,
+            eventName,
+            handler,
+            typeof(MapMarkerEvent),
+            "markerOff",
+            CallbackHandler.CreateTypedInvoker<MapMarkerEvent>(handler));
         callback.IsMapScoped = false;
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("markerOn", markerId.ToString(), eventName, reference);
@@ -3631,7 +3686,14 @@ public partial class MapLibre : ComponentBase, IAsyncDisposable
 
     private async Task<Listener> AddPopupListenerInternal(Guid popupId, string eventName, Delegate handler)
     {
-        var callback = new CallbackHandler(_jsModule, string.Empty, eventName, handler, typeof(MapMarkerEvent), "popupOff");
+        var callback = new CallbackHandler(
+            _jsModule,
+            string.Empty,
+            eventName,
+            handler,
+            typeof(MapMarkerEvent),
+            "popupOff",
+            CallbackHandler.CreateTypedInvoker<MapMarkerEvent>(handler));
         callback.IsMapScoped = false;
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await InvokeMapJsAsync<string>("popupOn", popupId.ToString(), eventName, reference);

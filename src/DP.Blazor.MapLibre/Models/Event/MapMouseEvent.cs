@@ -25,4 +25,11 @@ public class MapMouseEvent : MapEvent
     /// </summary>
     [JsonPropertyName("features")]
     public LayerFeatureFeature[] Features { get; set; } = [];
+
+    /// <summary>
+    /// True when JavaScript confirmed the pointer remains over the same rendered feature set;
+    /// only the point and coordinate are needed to reposition an existing hover popup.
+    /// </summary>
+    [JsonPropertyName("featuresUnchanged")]
+    public bool FeaturesUnchanged { get; set; }
 }

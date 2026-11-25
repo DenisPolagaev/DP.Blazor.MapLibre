@@ -187,7 +187,13 @@ public sealed class ComparePlugin : MapLibreJsPlugin
                 "Create the compare control with CreateAsync before subscribing to slide-end events.");
         }
 
-        var callback = new CallbackHandler(Module, _controlMapId, "slideend", handler, typeof(T));
+        var callback = new CallbackHandler(
+            Module,
+            _controlMapId,
+            "slideend",
+            handler,
+            typeof(T),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<T>(handler));
         var reference = DotNetObjectReference.Create(callback);
         var listenerId = await Module.InvokeAsync<string>("onSlideEnd", _controlMapId, _instanceKey, reference);
 

@@ -16,6 +16,7 @@ public class CallbackHandler
     private readonly Delegate _callbackDelegate;
     private readonly Type? _argumentType;
     private readonly string? _removeMethod;
+    private readonly Func<object?, bool, ValueTask>? _typedInvoker;
     private string? _listenerId;
     private DotNetObjectReference<CallbackHandler>? _dotNetReference;
     private Action<string>? _onRemoved;
@@ -53,7 +54,8 @@ public class CallbackHandler
         string eventType,
         Delegate callbackDelegate,
         Type argumentType,
-        string? removeMethod = null)
+        string? removeMethod = null,
+        Func<object?, bool, ValueTask>? typedInvoker = null)
     {
         _jsModule = jsModule;
         _mapId = mapId;
@@ -61,6 +63,56 @@ public class CallbackHandler
         _callbackDelegate = callbackDelegate;
         _argumentType = argumentType;
         _removeMethod = removeMethod;
+        _typedInvoker = typedInvoker;
+    }
+
+    /// <summary>
+    /// Creates a direct invoker for the delegate shapes used by map listeners. Build this once when
+    /// registering a listener rather than using <see cref="Delegate.DynamicInvoke(object?[])"/> on
+    /// every JavaScript event.
+    /// </summary>
+    public static Func<object?, bool, ValueTask> CreateTypedInvoker<T>(Delegate callbackDelegate)
+    {
+        ArgumentNullException.ThrowIfNull(callbackDelegate);
+
+        return callbackDelegate switch
+        {
+            Action<T> action => (value, hasArgument) =>
+            {
+                EnsureArgument(hasArgument, callbackDelegate);
+                action((T)value!);
+                return ValueTask.CompletedTask;
+            },
+            Func<T, Task> asyncAction => async (value, hasArgument) =>
+            {
+                EnsureArgument(hasArgument, callbackDelegate);
+                await asyncAction((T)value!).ConfigureAwait(false);
+            },
+            Func<T, ValueTask> asyncAction => (value, hasArgument) =>
+            {
+                EnsureArgument(hasArgument, callbackDelegate);
+                return asyncAction((T)value!);
+            },
+            Action action => (_, hasArgument) =>
+            {
+                EnsureNoArgument(hasArgument, callbackDelegate);
+                action();
+                return ValueTask.CompletedTask;
+            },
+            Func<Task> asyncAction => async (_, hasArgument) =>
+            {
+                EnsureNoArgument(hasArgument, callbackDelegate);
+                await asyncAction().ConfigureAwait(false);
+            },
+            Func<ValueTask> asyncAction => (_, hasArgument) =>
+            {
+                EnsureNoArgument(hasArgument, callbackDelegate);
+                return asyncAction();
+            },
+            _ => throw new ArgumentException(
+                $"Unsupported callback delegate type: {callbackDelegate.GetType().FullName}.",
+                nameof(callbackDelegate))
+        };
     }
 
     /// <summary>
@@ -71,6 +123,14 @@ public class CallbackHandler
         _dotNetReference = dotNetReference;
         _listenerId = listenerId;
         _onRemoved = onRemoved;
+    }
+
+    public Task UpdateLayerIdsAsync(IReadOnlyList<string> layerIds)
+    {
+        ArgumentNullException.ThrowIfNull(layerIds);
+        return _listenerId is { } listenerId
+            ? _jsModule.InvokeVoidAsync("updateListenerLayerIds", _mapId, listenerId, layerIds).AsTask()
+            : Task.CompletedTask;
     }
 
     /// <summary>
@@ -119,13 +179,7 @@ public class CallbackHandler
     {
         if (string.IsNullOrWhiteSpace(args) || _argumentType is null)
         {
-            var returnObject = InvokeDelegate();
-
-            if (returnObject is Task task)
-            {
-                await task;
-            }
-
+            await InvokeDelegateAsync(null, hasArgument: false);
             return;
         }
 
@@ -139,10 +193,28 @@ public class CallbackHandler
             deserializedArgs = JsonSerializer.Deserialize(args, _argumentType, MapLibreJsonSerializer.Options);
         }
 
-        var returnObjectWithArgs = InvokeDelegate(deserializedArgs);
-        if (returnObjectWithArgs is Task callbackTaskWithArgs)
+        await InvokeDelegateAsync(deserializedArgs, hasArgument: true);
+    }
+
+    private async ValueTask InvokeDelegateAsync(object? argument, bool hasArgument)
+    {
+        if (_typedInvoker is not null)
         {
-            await callbackTaskWithArgs;
+            await _typedInvoker(argument, hasArgument);
+            return;
+        }
+
+        var returnObject = hasArgument
+            ? InvokeDelegate(argument)
+            : InvokeDelegate();
+        switch (returnObject)
+        {
+            case Task task:
+                await task;
+                break;
+            case ValueTask valueTask:
+                await valueTask;
+                break;
         }
     }
 
@@ -160,6 +232,24 @@ public class CallbackHandler
         {
             ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
             throw;
+        }
+    }
+
+    private static void EnsureArgument(bool hasArgument, Delegate callbackDelegate)
+    {
+        if (!hasArgument)
+        {
+            throw new TargetParameterCountException(
+                $"Callback {callbackDelegate.Method.Name} requires an event argument.");
+        }
+    }
+
+    private static void EnsureNoArgument(bool hasArgument, Delegate callbackDelegate)
+    {
+        if (hasArgument)
+        {
+            throw new TargetParameterCountException(
+                $"Callback {callbackDelegate.Method.Name} does not accept an event argument.");
         }
     }
 }

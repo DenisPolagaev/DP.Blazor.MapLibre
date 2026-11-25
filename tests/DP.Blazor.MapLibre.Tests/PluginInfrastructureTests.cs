@@ -334,7 +334,14 @@ public class CallbackHandlerTests
     {
         var module = new RecordingModule();
         var probe = new Probe();
-        var handler = new CallbackHandler(module, "map-1", "click", (Action<string>)probe.Handle, typeof(string));
+        var callback = (Action<string>)probe.Handle;
+        var handler = new CallbackHandler(
+            module,
+            "map-1",
+            "click",
+            callback,
+            typeof(string),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<string>(callback));
         var reference = DotNetObjectReference.Create(handler);
         handler.Attach(reference, "listener-1");
 
@@ -359,6 +366,24 @@ public class CallbackHandlerTests
 
         module.Calls.Should().ContainSingle().Which.Identifier.Should().Be("markerOff");
         module.Calls[0].Args.Should().Equal("listener-2");
+    }
+
+    [Fact]
+    public async Task UpdateLayerIds_UpdatesTheRegisteredListenerWithoutReplacingItsReference()
+    {
+        var module = new RecordingModule();
+        var probe = new Probe();
+        var callback = (Action<string>)probe.Handle;
+        var handler = new CallbackHandler(module, "map-1", "mousemove", callback, typeof(string));
+        handler.Attach(DotNetObjectReference.Create(handler), "listener-3");
+
+        await handler.UpdateLayerIdsAsync(["layer-a", "layer-b"]);
+
+        module.Calls.Should().ContainSingle();
+        module.Calls[0].Identifier.Should().Be("updateListenerLayerIds");
+        module.Calls[0].Args[0].Should().Be("map-1");
+        module.Calls[0].Args[1].Should().Be("listener-3");
+        ((IReadOnlyList<string>)module.Calls[0].Args[2]!).Should().Equal("layer-a", "layer-b");
     }
 
     [Fact]
@@ -391,7 +416,14 @@ public class CallbackHandlerTests
     {
         var module = new RecordingModule();
         var probe = new Probe();
-        var handler = new CallbackHandler(module, "map-1", "click", (Action<string>)probe.Throw, typeof(string));
+        var callback = (Action<string>)probe.Throw;
+        var handler = new CallbackHandler(
+            module,
+            "map-1",
+            "click",
+            callback,
+            typeof(string),
+            typedInvoker: CallbackHandler.CreateTypedInvoker<string>(callback));
 
         var act = async () => await handler.Invoke("\"value\"");
 
